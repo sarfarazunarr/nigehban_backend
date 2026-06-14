@@ -48,7 +48,10 @@ const createIncident = async (userId, category, coordinates, description, files 
     },
     mediaUrls,
     description: updatedDescription,
-    verificationStatus: 'pending'
+    verificationStatus: 'pending',
+    status: 'pending',
+    teamReply: '',
+    action: ''
   });
 
   return incident;
@@ -70,7 +73,48 @@ const getIncidents = async (filters = {}, limit = 50, page = 1) => {
   return { incidents, total, page, limit };
 };
 
+/**
+ * Fetch a single incident by ID
+ */
+const getIncidentById = async (incidentId) => {
+  return await Incident.findById(incidentId).populate('reporter', 'phone cnic role');
+};
+
+/**
+ * Update incident verification and resolution status (Admin/B2G)
+ */
+const updateIncidentStatus = async (incidentId, status, teamReply, action) => {
+  const incident = await Incident.findById(incidentId);
+  if (!incident) {
+    throw new Error('Incident not found');
+  }
+
+  if (status) {
+    incident.status = status;
+    // Keep legacy verificationStatus synced
+    if (status === 'resolved' || status === 'in-progress') {
+      incident.verificationStatus = 'verified';
+    } else if (status === 'dismissed') {
+      incident.verificationStatus = 'dismissed';
+    } else {
+      incident.verificationStatus = 'pending';
+    }
+  }
+
+  if (teamReply !== undefined) {
+    incident.teamReply = teamReply;
+  }
+  if (action !== undefined) {
+    incident.action = action;
+  }
+
+  await incident.save();
+  return incident;
+};
+
 module.exports = {
   createIncident,
-  getIncidents
+  getIncidents,
+  getIncidentById,
+  updateIncidentStatus
 };

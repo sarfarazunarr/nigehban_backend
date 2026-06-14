@@ -2,10 +2,13 @@ const express = require('express');
 const router = express.Router();
 
 const authRoutes = require('./auth.routes');
+const profileRoutes = require('./profile.routes');
 const incidentRoutes = require('./incident.routes');
 const sosRoutes = require('./sos.routes');
 const lawRoutes = require('./law.routes');
 const syncRoutes = require('./sync.routes');
+const mapsRoutes = require('./maps.routes');
+const chatRoutes = require('./chat.routes');
 
 // Healthcheck endpoint
 router.get('/health', (req, res) => {
@@ -18,9 +21,12 @@ router.get('/health', (req, res) => {
 
 // Bind domains
 router.use('/auth', authRoutes);
+router.use('/profile', profileRoutes);
 router.use('/incidents', incidentRoutes);
 router.use('/sos', sosRoutes);
 router.use('/laws', lawRoutes);
 router.use('/sync', syncRoutes);
+router.use('/routes', mapsRoutes);
+router.use('/chat', chatRoutes);
 
 module.exports = router;

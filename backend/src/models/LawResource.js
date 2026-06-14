@@ -23,6 +23,10 @@ const LawResourceSchema = new mongoose.Schema(
       type: [String],
       required: [true, 'Survival instructions are required'],
       default: []
+    },
+    precautions: {
+      type: [String],
+      default: []
     }
   },
   {

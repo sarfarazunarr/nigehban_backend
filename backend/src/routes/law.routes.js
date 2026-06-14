@@ -8,6 +8,7 @@ const { authorize } = require('../middleware/rbac');
 router.get('/', protect, lawController.getAll);
 router.get('/category/:category', protect, lawController.getByCategory);
 router.get('/survival-instructions/:category', protect, lawController.getInstructions); // Separate endpoint for instructions
+router.get('/precautions/:category', protect, lawController.getPrecautions); // Separate endpoint for precautions
 
 // Admin CRUD management endpoints
 router.post('/', protect, authorize('SuperAdmin'), lawController.upsert);

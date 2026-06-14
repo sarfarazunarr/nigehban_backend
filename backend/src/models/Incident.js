@@ -41,6 +41,20 @@ const IncidentSchema = new mongoose.Schema(
       default: 'pending',
       index: true
     },
+    status: {
+      type: String,
+      enum: ['pending', 'in-progress', 'resolved', 'dismissed'],
+      default: 'pending',
+      index: true
+    },
+    teamReply: {
+      type: String,
+      default: ''
+    },
+    action: {
+      type: String,
+      default: ''
+    },
     timestamp: {
       type: Date,
       default: Date.now,

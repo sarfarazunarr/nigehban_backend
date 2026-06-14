@@ -27,20 +27,41 @@ const getSurvivalInstructions = async (category) => {
 };
 
 /**
+ * Retrieves precautions specifically for a category
+ */
+const getPrecautions = async (category) => {
+  const resource = await LawResource.findOne({ category: category.toLowerCase() }).select('category title precautions');
+  if (!resource) {
+    throw new Error(`No precautions found for category '${category}'`);
+  }
+  return {
+    category: resource.category,
+    title: resource.title,
+    precautions: resource.precautions || []
+  };
+};
+
+/**
  * Create or Update LawResource (Admin only)
  */
 const upsertLawResource = async (resourceData) => {
-  const { category, title, legalDescription, survivalInstructions } = resourceData;
+  const { category, title, legalDescription, survivalInstructions, precautions } = resourceData;
   const normalizedCategory = category.toLowerCase();
+
+  const updateFields = {
+    category: normalizedCategory,
+    title,
+    legalDescription,
+    survivalInstructions
+  };
+
+  if (precautions !== undefined) {
+    updateFields.precautions = precautions;
+  }
 
   const resource = await LawResource.findOneAndUpdate(
     { category: normalizedCategory },
-    {
-      category: normalizedCategory,
-      title,
-      legalDescription,
-      survivalInstructions
-    },
+    updateFields,
     { new: true, upsert: true, runValidators: true }
   );
 
@@ -68,6 +89,7 @@ const getAllLaws = async () => {
 module.exports = {
   getLawByCategory,
   getSurvivalInstructions,
+  getPrecautions,
   upsertLawResource,
   deleteLawResource,
   getAllLaws

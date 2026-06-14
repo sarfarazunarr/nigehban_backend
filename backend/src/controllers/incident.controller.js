@@ -89,8 +89,98 @@ const getList = async (req, res, next) => {
   }
 };
 
+/**
+ * Get current user's reported complaints
+ */
+const getMyIncidents = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page || '1', 10);
+    const limit = parseInt(req.query.limit || '20', 10);
+
+    const result = await incidentService.getIncidents(
+      { reporter: req.user._id },
+      limit,
+      page
+    );
+
+    res.status(200).json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get specific complaint details
+ */
+const getById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const incident = await incidentService.getIncidentById(id);
+
+    if (!incident) {
+      return res.status(404).json({ success: false, error: 'Complaint not found.' });
+    }
+
+    // Access check: Only reporter or Admins/B2G/CorporateAdmin can view
+    const isReporter = incident.reporter._id.toString() === req.user._id.toString();
+    const isAdmin = ['SuperAdmin', 'B2G', 'CorporateAdmin'].includes(req.user.role);
+
+    if (!isReporter && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden. You do not have permission to view this complaint.'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: incident
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Zod schema for updating status
+const updateStatusSchema = z.object({
+  status: z.enum(['pending', 'in-progress', 'resolved', 'dismissed']).optional(),
+  teamReply: z.string().optional(),
+  action: z.string().optional()
+});
+
+/**
+ * Update complaint status, team reply, and action (Admin/B2G only)
+ */
+const updateStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const validatedData = updateStatusSchema.parse(req.body);
+
+    const updatedIncident = await incidentService.updateIncidentStatus(
+      id,
+      validatedData.status,
+      validatedData.teamReply,
+      validatedData.action
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Complaint updated successfully',
+      data: updatedIncident
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   create,
   getHeatmap,
-  getList
+  getList,
+  getMyIncidents,
+  getById,
+  updateStatus
 };

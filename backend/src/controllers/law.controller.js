@@ -6,7 +6,8 @@ const upsertLawSchema = z.object({
   category: z.string().min(2, 'Category name must be at least 2 characters'),
   title: z.string().min(3, 'Title must be at least 3 characters'),
   legalDescription: z.string().min(10, 'Legal description must be detailed'),
-  survivalInstructions: z.array(z.string()).min(1, 'At least one survival instruction is required')
+  survivalInstructions: z.array(z.string()).min(1, 'At least one survival instruction is required'),
+  precautions: z.array(z.string()).optional()
 });
 
 /**
@@ -63,6 +64,25 @@ const getInstructions = async (req, res, next) => {
 };
 
 /**
+ * Get safety precautions by category (Separate Endpoint)
+ */
+const getPrecautions = async (req, res, next) => {
+  try {
+    const { category } = req.params;
+    const precautions = await lawService.getPrecautions(category);
+    res.status(200).json({
+      success: true,
+      data: precautions
+    });
+  } catch (error) {
+    res.status(404).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
  * Create or Update LawResource (Admin only)
  */
 const upsert = async (req, res, next) => {
@@ -102,6 +122,7 @@ module.exports = {
   getAll,
   getByCategory,
   getInstructions,
+  getPrecautions,
   upsert,
   remove
 };

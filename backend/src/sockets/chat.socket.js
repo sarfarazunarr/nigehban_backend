@@ -1,3 +1,6 @@
+const ChatSession = require('../models/ChatSession');
+const openaiService = require('../services/openai.service');
+
 module.exports = (io, socket) => {
   /**
    * Handle raw low-latency audio chunk streaming from user's device
@@ -56,6 +59,121 @@ module.exports = (io, socket) => {
         if (callback) callback({ success: false, error: 'Forbidden. Operator role required.' });
       }
     } catch (error) {
+      if (callback) callback({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * User sends a chat message (processed by AI or routed to human operator)
+   */
+  socket.on('chat_message', async (data, callback) => {
+    try {
+      const { text } = data;
+      if (!text || typeof text !== 'string') {
+        throw new Error('Message text is required.');
+      }
+
+      // 1. Fetch or create user chat session
+      let session = await ChatSession.findOne({ user: socket.user._id });
+      if (!session) {
+        session = await ChatSession.create({ user: socket.user._id, messages: [] });
+      }
+
+      if (session.status === 'ai') {
+        // Run AI response pipeline
+        const { reply, handoffTriggered } = await openaiService.processUserMessage(
+          socket.user._id,
+          text
+        );
+
+        // Emit response back to user
+        socket.emit('chat_message_receive', {
+          sender: 'ai',
+          content: reply,
+          timestamp: new Date()
+        });
+
+        // Handle human operator handoff trigger
+        if (handoffTriggered) {
+          io.to('operators').to('role:B2G').emit('handoff_request', {
+            userId: socket.user._id,
+            phone: socket.user.phone,
+            cnic: socket.user.cnic,
+            message: 'User requested live emergency operator takeover.'
+          });
+
+          socket.emit('chat_status_update', {
+            status: 'human',
+            message: 'Connecting to a live emergency agent...'
+          });
+        }
+      } else {
+        // Human operator mode: Save and relay user message to operators
+        session.messages.push({ sender: 'user', content: text });
+        await session.save();
+
+        io.to('operators').to('role:B2G').emit('operator_receive_message', {
+          userId: socket.user._id,
+          phone: socket.user.phone,
+          content: text,
+          timestamp: new Date()
+        });
+      }
+
+      if (callback) callback({ success: true });
+    } catch (error) {
+      console.error('Socket chat_message error:', error.message);
+      if (callback) callback({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Operator replies to a user session (takes over operator field)
+   */
+  socket.on('operator_reply', async (data, callback) => {
+    try {
+      // Auth verification: must be Admin or B2G dispatcher
+      if (!['SuperAdmin', 'B2G'].includes(socket.user.role)) {
+        throw new Error('Unauthorized. Operator role required.');
+      }
+
+      const { targetUserId, text } = data;
+      if (!targetUserId || !text) {
+        throw new Error('targetUserId and message text are required.');
+      }
+
+      // Update Chat Session status & operator fields
+      const session = await ChatSession.findOne({ user: targetUserId });
+      if (!session) {
+        throw new Error('User chat session not found.');
+      }
+
+      // Save reply
+      session.messages.push({ sender: 'operator', content: text });
+      session.status = 'human';
+      session.operator = socket.user._id;
+      await session.save();
+
+      // Emit operator message to target user notifications room
+      io.to(`user:notifications:${targetUserId}`).emit('chat_message_receive', {
+        sender: 'operator',
+        content: text,
+        operatorPhone: socket.user.phone,
+        timestamp: new Date()
+      });
+
+      // Sync message event back to all operators for dashboard tracking
+      io.to('operators').to('role:B2G').emit('operator_message_sync', {
+        userId: targetUserId,
+        sender: 'operator',
+        content: text,
+        operatorPhone: socket.user.phone,
+        timestamp: new Date()
+      });
+
+      if (callback) callback({ success: true });
+    } catch (error) {
+      console.error('Socket operator_reply error:', error.message);
       if (callback) callback({ success: false, error: error.message });
     }
   });

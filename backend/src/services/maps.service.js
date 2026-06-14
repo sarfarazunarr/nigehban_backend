@@ -104,7 +104,178 @@ const getSafetyHeatmap = async (lng, lat, radiusMeters = 5000) => {
   }
 };
 
+/**
+ * Retrieve route options and check safety for each route
+ * @param {string} origin 
+ * @param {string} destination 
+ */
+const getRouteSafety = async (origin, destination) => {
+  let routes = [];
+
+  if (IS_MOCK_MAPS) {
+    // Generate mock routes based in Islamabad area for testing
+    routes = [
+      {
+        summary: 'Kashmir Highway (Srinagar Highway)',
+        legs: [{
+          distance: { text: '6.2 km', value: 6200 },
+          duration: { text: '12 mins', value: 720 },
+          start_address: origin,
+          end_address: destination,
+          steps: [
+            { start_location: { lng: 73.0479, lat: 33.6844 }, end_location: { lng: 73.0585, lat: 33.6950 }, html_instructions: 'Head northeast on Srinagar Highway' },
+            { start_location: { lng: 73.0585, lat: 33.6950 }, end_location: { lng: 73.0700, lat: 33.7050 }, html_instructions: 'Take the exit toward F-7' }
+          ]
+        }]
+      },
+      {
+        summary: 'Jinnah Avenue & Khayaban-e-Suhrwardy',
+        legs: [{
+          distance: { text: '7.8 km', value: 7800 },
+          duration: { text: '18 mins', value: 1080 },
+          start_address: origin,
+          end_address: destination,
+          steps: [
+            { start_location: { lng: 73.0479, lat: 33.6844 }, end_location: { lng: 73.0420, lat: 33.6700 }, html_instructions: 'Head south toward Jinnah Ave' },
+            { start_location: { lng: 73.0420, lat: 33.6700 }, end_location: { lng: 73.0650, lat: 33.6620 }, html_instructions: 'Turn left onto Khayaban-e-Suhrwardy' },
+            { start_location: { lng: 73.0650, lat: 33.6620 }, end_location: { lng: 73.0700, lat: 33.7050 }, html_instructions: 'Arrive at destination' }
+          ]
+        }]
+      }
+    ];
+  } else {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&alternatives=true&key=${GOOGLE_MAPS_API_KEY}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.routes && data.routes.length > 0) {
+        routes = data.routes.map(r => ({
+          summary: r.summary,
+          legs: r.legs.map(leg => ({
+            distance: leg.distance,
+            duration: leg.duration,
+            start_address: leg.start_address,
+            end_address: leg.end_address,
+            steps: leg.steps.map(step => ({
+              start_location: step.start_location,
+              end_location: step.end_location,
+              html_instructions: step.html_instructions
+            }))
+          }))
+        }));
+      } else {
+        throw new Error(`Directions API error: ${data.status} ${data.error_message || ''}`);
+      }
+    } catch (error) {
+      console.error('Google Maps Directions API call failed, using mock routes:', error.message);
+      // Fallback to mock routes if live call fails
+      return getRouteSafety('Mock Origin', 'Mock Destination');
+    }
+  }
+
+  // Analyze safety for each route option
+  const analyzedRoutes = await Promise.all(routes.map(async (route, idx) => {
+    // 1. Gather all coordinate points in the route steps
+    const points = [];
+    route.legs.forEach(leg => {
+      leg.steps.forEach(step => {
+        // Collect start and end locations of steps
+        points.push([step.start_location.lng, step.start_location.lat]);
+        points.push([step.end_location.lng, step.end_location.lat]);
+      });
+    });
+
+    if (points.length === 0) {
+      return {
+        routeIndex: idx,
+        summary: route.summary,
+        distance: route.legs[0].distance.text,
+        duration: route.legs[0].duration.text,
+        safetyStatus: 'safe',
+        safetyAssessment: 'No path coordinates found to analyze.',
+        nearbyIncidentsCount: 0,
+        nearbyIncidents: []
+      };
+    }
+
+    // 2. Compute bounding box for query optimization
+    const lngs = points.map(p => p[0]);
+    const lats = points.map(p => p[1]);
+    const minLng = Math.min(...lngs) - 0.005; // expand bounding box by 500m
+    const maxLng = Math.max(...lngs) + 0.005;
+    const minLat = Math.min(...lats) - 0.005;
+    const maxLat = Math.max(...lats) + 0.005;
+
+    // 3. Find incidents inside the bounding box
+    const candidateIncidents = await Incident.find({
+      'location.coordinates.0': { $gte: minLng, $lte: maxLng },
+      'location.coordinates.1': { $gte: minLat, $lte: maxLat }
+    }).populate('reporter', 'phone cnic role');
+
+    // 4. Check distance from candidate incidents to any route point
+    // 500 meters is approximately 0.0045 decimal degrees
+    const safetyThreshold = 0.0045; 
+    const nearbyIncidents = [];
+
+    candidateIncidents.forEach(incident => {
+      const [incLng, incLat] = incident.location.coordinates;
+      
+      // Calculate min distance to any point along the route
+      let minDistance = Infinity;
+      for (const [ptLng, ptLat] of points) {
+        const dist = Math.sqrt(Math.pow(incLng - ptLng, 2) + Math.pow(incLat - ptLat, 2));
+        if (dist < minDistance) {
+          minDistance = dist;
+        }
+      }
+
+      if (minDistance <= safetyThreshold) {
+        nearbyIncidents.push({
+          id: incident._id,
+          category: incident.category,
+          coordinates: incident.location.coordinates,
+          description: incident.description,
+          status: incident.status,
+          distanceMeters: Math.round(minDistance * 111000) // approx meters
+        });
+      }
+    });
+
+    // Determine status
+    // Safe if no incidents nearby, moderately safe if 1-2 minor threats, unsafe if 3+ threats or severe incidents
+    const hasSevereIncident = nearbyIncidents.some(inc => ['kidnapping', 'physical_assault', 'domestic_violence'].includes(inc.category));
+    let safetyStatus = 'safe';
+    let safetyAssessment = 'This route is verified safe with no reported incidents nearby.';
+
+    if (nearbyIncidents.length > 0) {
+      if (nearbyIncidents.length >= 3 || hasSevereIncident) {
+        safetyStatus = 'unsafe';
+        safetyAssessment = `WARNING: This route is considered unsafe. There are ${nearbyIncidents.length} nearby threat incidents including severe threats like ${nearbyIncidents.map(i => i.category).join(', ')}.`;
+      } else {
+        safetyStatus = 'caution';
+        safetyAssessment = `CAUTION: This route has minor safety issues. There are ${nearbyIncidents.length} minor incident reports nearby.`;
+      }
+    }
+
+    return {
+      routeIndex: idx,
+      summary: route.summary,
+      distance: route.legs[0].distance.text,
+      duration: route.legs[0].duration.text,
+      safetyStatus,
+      safetyAssessment,
+      nearbyIncidentsCount: nearbyIncidents.length,
+      nearbyIncidents,
+      steps: route.legs[0].steps
+    };
+  }));
+
+  return analyzedRoutes;
+};
+
 module.exports = {
   verifyCoordinates,
-  getSafetyHeatmap
+  getSafetyHeatmap,
+  getRouteSafety
 };
