@@ -73,10 +73,12 @@ const getList = async (req, res, next) => {
     const limit = parseInt(req.query.limit || '20', 10);
     const category = req.query.category;
     const verificationStatus = req.query.verificationStatus;
+    const status = req.query.status;
 
     const filters = {};
     if (category) filters.category = category;
     if (verificationStatus) filters.verificationStatus = verificationStatus;
+    if (status) filters.status = status;
 
     const result = await incidentService.getIncidents(filters, limit, page);
 

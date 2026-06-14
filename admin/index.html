@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nigehbaan Admin Command Center</title>
+    <!-- FontAwesome v6 Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <!-- Leaflet CSS for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <!-- Global styling (imported in main.js but also can load standard stylesheet) -->
+  </head>
+  <body>
+    <!-- Real-time Alerts Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- 1. Login Screen Overlay -->
+    <div id="login-overlay">
+      <div class="login-card">
+        <h2>NIGEHBAAN</h2>
+        <p>Emergency Dispatch Control Portal</p>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="login-username">Phone Number or Email</label>
+            <input type="text" id="login-username" class="form-control" placeholder="e.g. +923001234567 or admin@nigehbaan.pk" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="login-password">Security Password</label>
+            <input type="password" id="login-password" class="form-control" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+          <div id="login-error-msg" style="color: var(--status-dismissed); font-size: 0.85rem; margin-bottom: 15px; text-align: left; display: none;"></div>
+          <button type="submit" class="btn-primary">Authenticate Console</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- 2. Main Portal Container (Hidden until Auth) -->
+    <div id="portal-container" style="display: none;">
+      <!-- Sidebar Navigation -->
+      <aside class="sidebar">
+        <div class="logo-area">
+          <i class="fa-solid fa-shield-halved" style="color: var(--accent-cyan); font-size: 1.5rem;"></i>
+          <h1>Nigehbaan</h1>
+          <span class="logo-badge">LIVE</span>
+        </div>
+        <ul class="nav-links">
+          <li class="nav-item">
+            <a class="nav-link active" data-tab="dashboard">
+              <i class="fa-solid fa-chart-line"></i>
+              <span>Dashboard</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" data-tab="sos">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <span>SOS Active Alerts</span>
+              <span id="badge-sos-count" class="nav-badge" style="display: none;">0</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" data-tab="incidents">
+              <i class="fa-solid fa-circle-exclamation"></i>
+              <span>Incident Hub</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" data-tab="chat">
+              <i class="fa-solid fa-headset"></i>
+              <span>Operator Chat</span>
+              <span id="badge-chat-count" class="nav-badge" style="background: var(--status-inprogress); display: none;">0</span>
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" data-tab="users">
+              <i class="fa-solid fa-users"></i>
+              <span>Users Directory</span>
+            </a>
+          </li>
+        </ul>
+        <div class="sidebar-footer">
+          <div class="operator-profile">
+            <span id="operator-display-phone" class="operator-phone">+923000000000</span>
+            <span id="operator-display-role" class="operator-role">Operator Console</span>
+          </div>
+          <button id="logout-btn" class="btn-logout" title="Disconnect Session">
+            <i class="fa-solid fa-power-off"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main Portal Content -->
+      <main class="main-content">
+        <!-- Dashboard Tab Panel -->
+        <div id="tab-dashboard" class="tab-content active">
+          <div class="page-header">
+            <h2>Command Dashboard</h2>
+            <div style="font-size: 0.9rem; color: var(--text-gray);">
+              System Status: <span style="color: var(--accent-cyan); font-weight: 600;"><i class="fa-solid fa-circle" style="font-size: 0.65rem; animation: pulse 1.5s infinite; margin-right: 4px;"></i> Connected</span>
+            </div>
+          </div>
+          
+          <!-- Quick Status metrics -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-info">
+                <h3>Total Registered Users</h3>
+                <div id="stat-total-users" class="stat-number">0</div>
+              </div>
+              <div class="stat-icon">
+                <i class="fa-solid fa-user-group"></i>
+              </div>
+            </div>
+            <div class="stat-card" style="border-color: rgba(217,4,41,0.25);">
+              <div class="stat-info">
+                <h3>Active SOS Signals</h3>
+                <div id="stat-active-sos" class="stat-number" style="color: var(--status-sos);">0</div>
+              </div>
+              <div class="stat-icon" style="background: rgba(217, 4, 41, 0.15); color: var(--status-sos);">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </div>
+            </div>
+            <div class="stat-card" style="border-color: rgba(255,193,7,0.25);">
+              <div class="stat-info">
+                <h3>Pending Complaints</h3>
+                <div id="stat-pending-incidents" class="stat-number" style="color: var(--status-pending);">0</div>
+              </div>
+              <div class="stat-icon" style="background: rgba(255, 193, 7, 0.15); color: var(--status-pending);">
+                <i class="fa-solid fa-clock"></i>
+              </div>
+            </div>
+            <div class="stat-card" style="border-color: rgba(13,110,253,0.25);">
+              <div class="stat-info">
+                <h3>In-Progress Logs</h3>
+                <div id="stat-inprogress-incidents" class="stat-number" style="color: var(--status-inprogress);">0</div>
+              </div>
+              <div class="stat-icon" style="background: rgba(13, 110, 253, 0.15); color: var(--status-inprogress);">
+                <i class="fa-solid fa-spinner"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dashboard interactive Map & Live Feed layout -->
+          <div class="dashboard-layout">
+            <div class="glass-panel">
+              <div class="panel-header">
+                <h3>National Security Overlay Map</h3>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">Plotting SOS locations & recent incident points</span>
+              </div>
+              <div id="dashboard-map" class="dashboard-map"></div>
+            </div>
+            <div class="glass-panel">
+              <div class="panel-header">
+                <h3>Recent Incident Alerts</h3>
+                <button id="refresh-dashboard-btn" class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">
+                  <i class="fa-solid fa-rotate"></i>
+                </button>
+              </div>
+              <div id="dashboard-feed-list" class="activity-list">
+                <!-- Dynamic feed list items will go here -->
+                <div style="color: var(--text-muted); text-align: center; margin-top: 50px; font-size: 0.9rem;">
+                  No recent incident reports.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active SOS Tracking Panel Tab -->
+        <div id="tab-sos" class="tab-content">
+          <div class="page-header">
+            <h2>Live SOS Emergency Tracker</h2>
+          </div>
+          <div class="sos-console-grid">
+            <div class="glass-panel" style="padding: 18px;">
+              <div class="panel-header" style="margin-bottom: 15px;">
+                <h3>Active Alerts</h3>
+              </div>
+              <div id="sos-active-list" class="sos-list">
+                <!-- Dynamic SOS session cards -->
+                <div style="color: var(--text-muted); text-align: center; margin-top: 100px; font-size: 0.95rem;">
+                  <i class="fa-solid fa-circle-check" style="color: var(--status-resolved); font-size: 2.5rem; margin-bottom: 15px; display: block;"></i>
+                  All quiet. No active SOS signals detected.
+                </div>
+              </div>
+            </div>
+            
+            <div class="tracking-panel">
+              <div id="sos-tracking-map" class="tracking-map"></div>
+              <div id="sos-tracking-details" class="tracking-details">
+                <h3>No Session Selected</h3>
+                <p>Select an active SOS broadcast card from the left panel to begin live coordinate tracking and telemetry feed monitoring.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Incident Hub Tab -->
+        <div id="tab-incidents" class="tab-content">
+          <div class="page-header">
+            <h2>Incident Hub & Complaints</h2>
+          </div>
+          <div class="glass-panel">
+            <div class="panel-header" style="flex-wrap: wrap; gap: 15px; margin-bottom: 25px;">
+              <!-- Left: Filter groups -->
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="incident-status-filters">
+                <button class="btn active-filter" data-status="" style="background: var(--bg-tertiary); color: var(--accent-cyan); border: 1px solid var(--accent-cyan);">All Complaints</button>
+                <button class="btn" data-status="pending" style="background: rgba(255, 193, 7, 0.05); color: var(--status-pending); border: 1px solid rgba(255, 193, 7, 0.2);">Pending</button>
+                <button class="btn" data-status="in-progress" style="background: rgba(13, 110, 253, 0.05); color: var(--status-inprogress); border: 1px solid rgba(13, 110, 253, 0.2);">In-Progress</button>
+                <button class="btn" data-status="resolved" style="background: rgba(25, 135, 84, 0.05); color: var(--status-resolved); border: 1px solid rgba(25, 135, 84, 0.2);">Resolved</button>
+                <button class="btn" data-status="dismissed" style="background: rgba(220, 53, 69, 0.05); color: var(--status-dismissed); border: 1px solid rgba(220, 53, 69, 0.2);">Dismissed</button>
+              </div>
+              
+              <!-- Right: Category filter & search -->
+              <div style="display: flex; gap: 10px;">
+                <select id="incident-category-select" class="form-control" style="width: 160px; padding: 8px 12px; background: var(--bg-primary);">
+                  <option value="">All Categories</option>
+                  <option value="harassment">Harassment</option>
+                  <option value="stalking">Stalking</option>
+                  <option value="domestic_violence">Domestic Violence</option>
+                  <option value="physical_assault">Physical Assault</option>
+                  <option value="kidnapping">Kidnapping</option>
+                  <option value="other">Other</option>
+                </select>
+                <button id="refresh-incidents-btn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">
+                  <i class="fa-solid fa-rotate"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Incidents Data Table -->
+            <div class="incidents-table-container">
+              <table class="custom-table" id="incidents-table">
+                <thead>
+                  <tr>
+                    <th>Report ID</th>
+                    <th>Category</th>
+                    <th>Reporter</th>
+                    <th>Incident Address / Details</th>
+                    <th>Reported Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="incidents-tbody">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 50px;">
+                      Loading complaints...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- Pagination Controls -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; font-size: 0.85rem; color: var(--text-gray);">
+              <div>Showing <span id="incident-page-count">0-0 of 0</span> complaints</div>
+              <div style="display: flex; gap: 10px;">
+                <button id="incident-prev-page" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);" disabled>Previous</button>
+                <button id="incident-next-page" class="btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);" disabled>Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Operator Chat Takeover Panel -->
+        <div id="tab-chat" class="tab-content">
+          <div class="page-header">
+            <h2>Real-Time Human Operator Chat Takeover</h2>
+          </div>
+          
+          <div class="chat-container">
+            <!-- Left Panel: Chat Sessions list -->
+            <div class="chat-sessions-sidebar">
+              <div class="chat-sessions-header">
+                Handoff Requests
+              </div>
+              <div id="chat-session-list" class="chat-sessions-list">
+                <!-- Dynamic active chat items -->
+                <div style="color: var(--text-muted); text-align: center; padding: 40px 20px; font-size: 0.9rem;">
+                  No active operator handoff requests in progress.
+                </div>
+              </div>
+            </div>
+            
+            <!-- Right Panel: Message Window -->
+            <div class="chat-window">
+              <div id="chat-window-header" class="chat-window-header">
+                <div>
+                  <h3 id="chat-target-phone">Select a Conversation</h3>
+                  <span id="chat-target-cnic" style="font-size: 0.8rem; color: var(--text-muted);">Choose a user session from the sidebar to take over communication.</span>
+                </div>
+                <div id="chat-actions-container" style="display: none;">
+                  <button id="btn-close-chat" class="btn" style="background: var(--status-dismissed); color: white; border: none; font-size: 0.85rem;">
+                    Revert to AI Agent
+                  </button>
+                </div>
+              </div>
+              
+              <div id="chat-messages-container" class="chat-messages">
+                <div style="color: var(--text-muted); text-align: center; margin-top: 150px; font-size: 0.95rem;">
+                  <i class="fa-solid fa-comments" style="font-size: 3rem; color: var(--border-glass); margin-bottom: 15px; display: block;"></i>
+                  Operator console ready. Connect and reply to handoffs in real-time.
+                </div>
+              </div>
+              
+              <form id="chat-input-form" class="chat-input-area" style="display: none;">
+                <input type="text" id="chat-msg-input" class="chat-input" placeholder="Type instructions or emergency response instructions..." required autocomplete="off">
+                <button type="submit" class="btn-send">Send Reply</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- Registered Users Tab -->
+        <div id="tab-users" class="tab-content">
+          <div class="page-header">
+            <h2>Users Directory</h2>
+          </div>
+          <div class="glass-panel">
+            <div class="panel-header" style="justify-content: space-between; gap: 15px; margin-bottom: 25px;">
+              <input type="text" id="users-search-input" class="form-control" placeholder="Search by phone, email, CNIC, or role..." style="width: 300px; padding: 10px 15px;">
+              <button id="refresh-users-btn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">
+                <i class="fa-solid fa-rotate"></i>
+              </button>
+            </div>
+            
+            <div class="incidents-table-container">
+              <table class="custom-table" id="users-table">
+                <thead>
+                  <tr>
+                    <th>User ID</th>
+                    <th>Phone Number</th>
+                    <th>CNIC Identity</th>
+                    <th>Email Address</th>
+                    <th>Assigned Role</th>
+                    <th>Registered Date</th>
+                  </tr>
+                </thead>
+                <tbody id="users-tbody">
+                  <tr>
+                    <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 50px;">
+                      Loading user database...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- 3. Details Modal Overlay (For Complaints) -->
+    <div id="incident-modal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Complaint Incident Details</h3>
+          <button id="modal-close-btn" class="modal-close">&times;</button>
+        </div>
+        
+        <div id="modal-content-details">
+          <!-- Dynamically generated modal details -->
+          <div class="modal-section">
+            <h4>Loading Details...</h4>
+          </div>
+        </div>
+
+        <!-- Form to update verification status and response actions -->
+        <div class="modal-section" style="border-top: 1px solid var(--border-glass); padding-top: 20px; margin-top: 20px;">
+          <h4>Action & Verification Update</h4>
+          <form id="incident-update-form">
+            <input type="hidden" id="modal-incident-id">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="modal-status-select">Verification Status</label>
+                <select id="modal-status-select" class="form-control" style="background: var(--bg-primary);">
+                  <option value="pending">Pending</option>
+                  <option value="in-progress">In-Progress</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="dismissed">Dismissed</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom: 0;">
+                <label for="modal-action-input">Assigned Force Unit / Action</label>
+                <input type="text" id="modal-action-input" class="form-control" placeholder="e.g. Unit 4 dispatched, patrol active">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="modal-reply-input">Team Dispatch Reply Message</label>
+              <textarea id="modal-reply-input" class="form-control" placeholder="Send instructions or response feedback to the victim..." rows="3" style="resize: vertical;"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 15px;">
+              <button type="button" id="modal-cancel-btn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">Cancel</button>
+              <button type="submit" class="btn" style="background: var(--status-inprogress); color: white; border: none;">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaflet JS for Maps -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <!-- Socket.io Client for real-time WebSocket -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- Application script entry point -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

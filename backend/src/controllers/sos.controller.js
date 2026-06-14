@@ -70,9 +70,22 @@ const pingLocation = async (req, res, next) => {
  */
 const closeSos = async (req, res, next) => {
   try {
-    const session = await sosService.closeSosSession(req.user._id);
+    const isAdmin = ['SuperAdmin', 'B2G'].includes(req.user.role);
+    const targetUserId = (isAdmin && req.body.targetUserId) ? req.body.targetUserId : req.user._id;
+
+    const session = await sosService.closeSosSession(targetUserId);
     if (!session) {
       return res.status(404).json({ success: false, error: 'No active SOS session found.' });
+    }
+
+    // Emit socket notification to let other listeners/dispatchers know the SOS is resolved
+    const io = req.app.get('io');
+    if (io) {
+      const roomName = `sos:room:${targetUserId}`;
+      io.to(roomName).emit('sos_resolved', {
+        userId: targetUserId,
+        resolvedAt: new Date()
+      });
     }
 
     res.status(200).json({

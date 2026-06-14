@@ -1,3 +1,8 @@
+// Force Node.js to use Google and Cloudflare DNS to resolve MongoDB Atlas SRV records
+// (Resolves querySrv ECONNREFUSED issues caused by local ISP DNS blocks)
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 require('dotenv').config();
 const express = require('express');
 const http = require('http');

@@ -70,7 +70,27 @@ const closeHumanSession = async (req, res, next) => {
   }
 };
 
+/**
+ * Get all active human operator chats (Admin/B2G only)
+ */
+const getActiveChats = async (req, res, next) => {
+  try {
+    const sessions = await ChatSession.find({ status: 'human' })
+      .populate('user', 'phone cnic role')
+      .populate('operator', 'phone role')
+      .sort({ updatedAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: sessions
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getChatHistory,
-  closeHumanSession
+  closeHumanSession,
+  getActiveChats
 };

@@ -126,8 +126,24 @@ const removeTrustedContact = async (req, res, next) => {
   }
 };
 
+/**
+ * Fetch all registered users (Admin/B2G only)
+ */
+const getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find({}).select('-password').sort({ createdAt: -1 });
+    res.status(200).json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
   addTrustedContact,
-  removeTrustedContact
+  removeTrustedContact,
+  getAllUsers
 };
