@@ -15,13 +15,17 @@ const User = require('./src/models/User');
 const Incident = require('./src/models/Incident');
 const LawResource = require('./src/models/LawResource');
 const ChatSession = require('./src/models/ChatSession');
+const CommunityAlert = require('./src/models/CommunityAlert');
+const CommunityHelpChat = require('./src/models/CommunityHelpChat');
 
 // Mock memory store
 const dbStore = {
   users: [],
   incidents: [],
   laws: [],
-  chatSessions: []
+  chatSessions: [],
+  communityAlerts: [],
+  communityHelpChats: []
 };
 
 // 2. Stub Mongoose User Methods
@@ -242,6 +246,105 @@ ChatSession.findOneAndUpdate = async (query, update, options) => {
   return createMockChatSessionInstance(session);
 };
 
+// Stubbing Mongoose methods for CommunityAlert
+CommunityAlert.create = async (data) => {
+  const alert = {
+    _id: new mongoose.Types.ObjectId(),
+    active: true,
+    ...data,
+    location: {
+      type: 'Point',
+      coordinates: data.location ? data.location.coordinates : [0,0]
+    },
+    save: async function() {
+      const idx = dbStore.communityAlerts.findIndex(a => a._id.toString() === this._id.toString());
+      if (idx > -1) dbStore.communityAlerts[idx] = { ...this };
+      return this;
+    }
+  };
+  dbStore.communityAlerts.push(alert);
+  return alert;
+};
+
+CommunityAlert.findById = (id) => {
+  const alert = dbStore.communityAlerts.find(a => a._id.toString() === id.toString()) || null;
+  return Promise.resolve(alert ? {
+    ...alert,
+    save: async function() {
+      const idx = dbStore.communityAlerts.findIndex(a => a._id.toString() === this._id.toString());
+      if (idx > -1) dbStore.communityAlerts[idx] = { ...this };
+      return this;
+    }
+  } : null);
+};
+
+CommunityAlert.find = (query = {}) => {
+  let list = dbStore.communityAlerts;
+  if (query.active !== undefined) {
+    list = list.filter(a => a.active === query.active);
+  }
+  if (query.seeker && query.seeker.$ne) {
+    list = list.filter(a => a.seeker.toString() !== query.seeker.$ne.toString());
+  }
+  return {
+    populate: () => Promise.resolve(list)
+  };
+};
+
+// Stubbing Mongoose methods for CommunityHelpChat
+CommunityHelpChat.findOne = (query) => {
+  const chat = dbStore.communityHelpChats.find(c => 
+    c.alert.toString() === query.alert.toString() &&
+    c.helper.toString() === query.helper.toString()
+  ) || null;
+  return Promise.resolve(chat);
+};
+
+CommunityHelpChat.create = async (data) => {
+  const chat = {
+    _id: new mongoose.Types.ObjectId(),
+    messages: [],
+    ...data,
+    save: async function() {
+      const idx = dbStore.communityHelpChats.findIndex(c => c._id.toString() === this._id.toString());
+      if (idx > -1) dbStore.communityHelpChats[idx] = { ...this };
+      return this;
+    }
+  };
+  dbStore.communityHelpChats.push(chat);
+  return chat;
+};
+
+CommunityHelpChat.find = (query) => {
+  let list = dbStore.communityHelpChats;
+  if (query.$or) {
+    const uId = query.$or[0].seeker || query.$or[0].helper;
+    list = list.filter(c => c.seeker.toString() === uId.toString() || c.helper.toString() === uId.toString());
+  }
+  const chain = {
+    populate: () => chain,
+    sort: () => Promise.resolve(list),
+    then: (resolve) => resolve(list)
+  };
+  return chain;
+};
+
+CommunityHelpChat.findById = (id) => {
+  const chat = dbStore.communityHelpChats.find(c => c._id.toString() === id.toString()) || null;
+  const chain = {
+    populate: () => chain,
+    then: (resolve) => resolve(chat ? {
+      ...chat,
+      save: async function() {
+        const idx = dbStore.communityHelpChats.findIndex(c => c._id.toString() === this._id.toString());
+        if (idx > -1) dbStore.communityHelpChats[idx] = { ...this };
+        return this;
+      }
+    } : null)
+  };
+  return chain;
+};
+
 // 6. Stub Redis Client
 const { redisClient } = require('./src/config/redis');
 redisClient.disconnect(); // stop connections
@@ -256,6 +359,7 @@ const incidentService = require('./src/services/incident.service');
 const mapsService = require('./src/services/maps.service');
 const openaiService = require('./src/services/openai.service');
 const profileController = require('./src/controllers/profile.controller');
+const communityController = require('./src/controllers/community.controller');
 
 async function runMockVerification() {
   console.log('==================================================');
@@ -395,6 +499,120 @@ async function runMockVerification() {
 
     const chatSession = await ChatSession.findOne({ user: mainUser._id });
     console.log(`- Verified Chat Session Status: ${chatSession.status}`);
+
+    // 6. Nearby Community Help Request & Peer Chat Verification
+    console.log('\n[TEST 6/6] Verifying Nearby Help Requests and Peer Chats...');
+    
+    // Seeker creates community alert
+    const reqAlert = {
+      user: { _id: mainUser._id, phone: mainUser.phone },
+      body: { longitude: 73.0479, latitude: 33.6844, message: 'I need urgent assistance with a broken car wheel near empty street!' },
+      app: { get: () => null } // Stub socket app getter
+    };
+    let alertResData = null;
+    const resAlert = {
+      status: (code) => ({
+        json: (data) => {
+          alertResData = data;
+          return { status: code };
+        }
+      })
+    };
+    await communityController.createAlert(reqAlert, resAlert, (err) => { if (err) throw err; });
+    console.log(`- Created Alert status: ${alertResData.success ? 'SUCCESS' : 'FAILED'}`);
+    if (alertResData.success) {
+      console.log(`  Alert ID: ${alertResData.alert._id}`);
+      console.log(`  Alert Message: "${alertResData.alert.message}"`);
+    } else {
+      throw new Error(`Community alert creation failed: ${alertResData.error}`);
+    }
+
+    // Helper finds nearby alerts
+    const reqNearby = {
+      user: { _id: contactUser._id },
+      query: { longitude: 73.0480, latitude: 33.6845, radius: 2000 }
+    };
+    let nearbyResData = null;
+    const resNearby = {
+      status: (code) => ({
+        json: (data) => {
+          nearbyResData = data;
+          return { status: code };
+        }
+      })
+    };
+    await communityController.getNearbyAlerts(reqNearby, resNearby, (err) => { if (err) throw err; });
+    console.log(`- Nearby alerts count found: ${nearbyResData.data.length}`);
+    if (nearbyResData.success && nearbyResData.data.length > 0) {
+      console.log(`  Found nearby alert from user: ${nearbyResData.data[0].seeker}`);
+    } else {
+      throw new Error('No nearby community alerts found.');
+    }
+
+    // Helper responds to alert
+    const reqRespond = {
+      user: { _id: contactUser._id },
+      params: { alertId: alertResData.alert._id.toString() }
+    };
+    let respondResData = null;
+    const resRespond = {
+      status: (code) => ({
+        json: (data) => {
+          respondResData = data;
+          return { status: code };
+        }
+      })
+    };
+    await communityController.respondToAlert(reqRespond, resRespond, (err) => { if (err) throw err; });
+    console.log(`- Respond to alert result: ${respondResData.success ? 'SUCCESS' : 'FAILED'}`);
+    if (respondResData.success) {
+      console.log(`  Chat Session ID Created: ${respondResData.chat._id}`);
+    } else {
+      throw new Error(`Responding to alert failed: ${respondResData.error}`);
+    }
+
+    // Helper sends a chat message to seeker
+    const reqMessage = {
+      user: { _id: contactUser._id, phone: contactUser.phone },
+      params: { chatId: respondResData.chat._id.toString() },
+      body: { content: "I am close by. I have a car jack tool, heading your way." },
+      app: { get: () => null }
+    };
+    let msgResData = null;
+    const resMessage = {
+      status: (code) => ({
+        json: (data) => {
+          msgResData = data;
+          return { status: code };
+        }
+      })
+    };
+    await communityController.sendChatMessage(reqMessage, resMessage, (err) => { if (err) throw err; });
+    console.log(`- Message sent success: ${msgResData.success ? 'SUCCESS' : 'FAILED'}`);
+    if (msgResData.success) {
+      console.log(`  Message content: "${msgResData.data.content}"`);
+    } else {
+      throw new Error(`Sending chat message failed: ${msgResData.error}`);
+    }
+
+    // Seeker closes the alert
+    const reqClose = {
+      user: { _id: mainUser._id },
+      params: { alertId: alertResData.alert._id.toString() },
+      app: { get: () => null }
+    };
+    let closeResData = null;
+    const resClose = {
+      status: (code) => ({
+        json: (data) => {
+          closeResData = data;
+          return { status: code };
+        }
+      })
+    };
+    await communityController.closeAlert(reqClose, resClose, (err) => { if (err) throw err; });
+    console.log(`- Closed Alert status: ${closeResData.success ? 'SUCCESS' : 'FAILED'}`);
+    console.log(`  Alert active flag updated: ${closeResData.alert.active}`);
 
     console.log('\n==================================================');
     console.log('🎉 ALL COMPLETENESS VERIFICATIONS PASSED SUCCESSFULLY!');

@@ -1,4 +1,5 @@
 const ChatSession = require('../models/ChatSession');
+const CommunityHelpChat = require('../models/CommunityHelpChat');
 const openaiService = require('../services/openai.service');
 
 module.exports = (io, socket) => {
@@ -174,6 +175,83 @@ module.exports = (io, socket) => {
       if (callback) callback({ success: true });
     } catch (error) {
       console.error('Socket operator_reply error:', error.message);
+      if (callback) callback({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Join a community user-to-user help chat room
+   */
+  socket.on('join_community_chat', async (data, callback) => {
+    try {
+      const { chatId } = data;
+      if (!chatId) {
+        throw new Error('Chat ID is required.');
+      }
+
+      // Verify chat existence and access permissions
+      const chat = await CommunityHelpChat.findById(chatId);
+      if (!chat) {
+        throw new Error('Chat session not found.');
+      }
+
+      const isParticipant = [chat.seeker.toString(), chat.helper.toString()].includes(socket.user._id.toString());
+      if (!isParticipant) {
+        throw new Error('Unauthorized. You are not a participant in this chat session.');
+      }
+
+      const roomName = `community:chat:${chatId}`;
+      socket.join(roomName);
+      console.log(`[Socket Community Chat] User ${socket.user.phone} joined room ${roomName}`);
+
+      if (callback) callback({ success: true });
+    } catch (error) {
+      console.error('Socket join_community_chat error:', error.message);
+      if (callback) callback({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Send a real-time message inside a community help chat room
+   */
+  socket.on('send_community_message', async (data, callback) => {
+    try {
+      const { chatId, content } = data;
+      if (!chatId || !content) {
+        throw new Error('chatId and content are required.');
+      }
+
+      const chat = await CommunityHelpChat.findById(chatId);
+      if (!chat) {
+        throw new Error('Chat session not found.');
+      }
+
+      // Access check
+      const isParticipant = [chat.seeker.toString(), chat.helper.toString()].includes(socket.user._id.toString());
+      if (!isParticipant) {
+        throw new Error('Unauthorized. You are not a participant in this chat.');
+      }
+
+      // Save message in DB
+      chat.messages.push({
+        sender: socket.user._id,
+        content
+      });
+      await chat.save();
+
+      // Broadcast message to room (notifying other participant)
+      const roomName = `community:chat:${chatId}`;
+      socket.to(roomName).emit('community_message_receive', {
+        chatId,
+        senderId: socket.user._id,
+        senderPhone: socket.user.phone,
+        content,
+        timestamp: new Date()
+      });
+
+      if (callback) callback({ success: true });
+    } catch (error) {
+      console.error('Socket send_community_message error:', error.message);
       if (callback) callback({ success: false, error: error.message });
     }
   });
