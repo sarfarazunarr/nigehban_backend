@@ -8,7 +8,9 @@ const registerSchema = z.object({
   cnic: z.string().min(13, 'CNIC must be 13 digits').max(15),
   email: z.string().email('Please enter a valid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['User', 'Guardian', 'CorporateAdmin', 'SuperAdmin']).optional()
+  role: z.enum(['User', 'Guardian', 'CorporateAdmin', 'SuperAdmin']).optional(),
+  name: z.string().optional(),
+  address: z.string().optional()
 });
 
 const loginSchema = z.object({

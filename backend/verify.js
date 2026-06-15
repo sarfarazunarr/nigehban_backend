@@ -2,6 +2,9 @@
  * Nigehbaan Backend Programmatic Verification & Unit Test Script
  * Verifies Mongoose Models, Geospatial Indexes, Hashing, Services and Configurations.
  */
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('./src/models/User');

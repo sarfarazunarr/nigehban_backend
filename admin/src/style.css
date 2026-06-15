@@ -634,6 +634,7 @@ body {
   border-right: 1px solid var(--border-glass);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .chat-sessions-header {
@@ -684,6 +685,7 @@ body {
   display: flex;
   flex-direction: column;
   background: rgba(0, 0, 0, 0.15);
+  min-height: 0;
 }
 
 .chat-window-header {
@@ -751,6 +753,7 @@ body {
   border-top: 1px solid var(--border-glass);
   display: flex;
   gap: 16px;
+  flex-shrink: 0;
 }
 
 .chat-input {

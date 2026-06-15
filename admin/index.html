@@ -76,6 +76,12 @@
               <span>Users Directory</span>
             </a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link" data-tab="resources">
+              <i class="fa-solid fa-book-bookmark"></i>
+              <span>Safety Resources</span>
+            </a>
+          </li>
         </ul>
         <div class="sidebar-footer">
           <div class="operator-profile">
@@ -329,6 +335,8 @@
                 <thead>
                   <tr>
                     <th>User ID</th>
+                    <th>Name</th>
+                    <th>Address</th>
                     <th>Phone Number</th>
                     <th>CNIC Identity</th>
                     <th>Email Address</th>
@@ -338,12 +346,102 @@
                 </thead>
                 <tbody id="users-tbody">
                   <tr>
-                    <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 50px;">
+                    <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 50px;">
                       Loading user database...
                     </td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Safety Resources Tab -->
+        <div id="tab-resources" class="tab-content">
+          <div class="page-header">
+            <h2>Safety Resources Management</h2>
+          </div>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+            <!-- Left Panel: Laws & Survival Instructions -->
+            <div class="glass-panel" style="padding: 20px;">
+              <h3 style="color: var(--accent-cyan); margin-bottom: 20px;"><i class="fa-solid fa-scale-balanced" style="margin-right:8px;"></i> Laws & Survival Instructions</h3>
+              
+              <!-- Create/Edit Law Form -->
+              <form id="law-form" style="margin-bottom: 25px; border-bottom: 1px solid var(--border-glass); padding-bottom: 25px;">
+                <h4 style="margin-bottom: 15px;">Add / Update Law</h4>
+                <div class="form-group">
+                  <label for="law-category">Category</label>
+                  <select id="law-category" class="form-control" style="background: var(--bg-primary);" required>
+                    <option value="">Select Category</option>
+                    <option value="harassment">Harassment</option>
+                    <option value="stalking">Stalking</option>
+                    <option value="domestic_violence">Domestic Violence</option>
+                    <option value="physical_assault">Physical Assault</option>
+                    <option value="kidnapping">Kidnapping</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="law-title">Title</label>
+                  <input type="text" id="law-title" class="form-control" placeholder="e.g. Protection against Harassment Act Section 509" required>
+                </div>
+                <div class="form-group">
+                  <label for="law-description">Legal Description</label>
+                  <textarea id="law-description" class="form-control" placeholder="Enter full legal definition or penal code details..." rows="3" required></textarea>
+                </div>
+                <div class="form-group">
+                  <label for="law-instructions">Survival Instructions (One instruction per line)</label>
+                  <textarea id="law-instructions" class="form-control" placeholder="e.g. Make noise and draw public attention immediately&#10;Document details of the harasser and time" rows="3" required></textarea>
+                </div>
+                <div class="form-group">
+                  <label for="law-precautions">Safety Precautions (One precaution per line, optional)</label>
+                  <textarea id="law-precautions" class="form-control" placeholder="e.g. Avoid poorly lit routes&#10;Share live location with a guardian" rows="3"></textarea>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                  <button type="submit" class="btn-primary" style="flex: 1;">Save Law Resource</button>
+                  <button type="button" id="clear-law-form" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">Clear</button>
+                </div>
+              </form>
+
+              <!-- Existing Laws List -->
+              <h4>Active Law Resources</h4>
+              <div id="laws-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading law catalog...</div>
+              </div>
+            </div>
+            
+            <!-- Right Panel: Emergency Contacts / Helplines -->
+            <div class="glass-panel" style="padding: 20px;">
+              <h3 style="color: var(--accent-cyan); margin-bottom: 20px;"><i class="fa-solid fa-phone-volume" style="margin-right:8px;"></i> Emergency Helpline Contacts</h3>
+              
+              <!-- Create/Edit Contact Form -->
+              <form id="emergency-contact-form" style="margin-bottom: 25px; border-bottom: 1px solid var(--border-glass); padding-bottom: 25px;">
+                <h4 style="margin-bottom: 15px;">Add / Update Helpline</h4>
+                <input type="hidden" id="contact-id">
+                <div class="form-group">
+                  <label for="contact-name">Helpline Name / Agency</label>
+                  <input type="text" id="contact-name" class="form-control" placeholder="e.g. Police Emergency Helpline, Edhi Ambulance" required>
+                </div>
+                <div class="form-group">
+                  <label for="contact-phone">Phone Number / Code</label>
+                  <input type="text" id="contact-phone" class="form-control" placeholder="e.g. 15 or 115 or 051-1234567" required>
+                </div>
+                <div class="form-group">
+                  <label for="contact-description">Description / Area Covered</label>
+                  <input type="text" id="contact-description" class="form-control" placeholder="e.g. Nationwide dispatch, Islamabad region only">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                  <button type="submit" class="btn-primary" style="flex: 1;">Save Helpline</button>
+                  <button type="button" id="clear-contact-form" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">Clear</button>
+                </div>
+              </form>
+
+              <!-- Existing Helplines List -->
+              <h4>Active Helplines</h4>
+              <div id="contacts-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading helpline registers...</div>
+              </div>
             </div>
           </div>
         </div>
@@ -394,6 +492,27 @@
               <button type="submit" class="btn" style="background: var(--status-inprogress); color: white; border: none;">Save Changes</button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. User Details Modal Overlay -->
+    <div id="user-modal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>User Profile & Guardians</h3>
+          <button id="user-modal-close-btn" class="modal-close">&times;</button>
+        </div>
+        
+        <div id="user-modal-content-details">
+          <!-- Dynamically generated user details -->
+          <div class="modal-section">
+            <h4>Loading Details...</h4>
+          </div>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 15px; border-top: 1px solid var(--border-glass); padding-top: 15px;">
+          <button type="button" id="user-modal-cancel-btn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">Close Details</button>
         </div>
       </div>
     </div>

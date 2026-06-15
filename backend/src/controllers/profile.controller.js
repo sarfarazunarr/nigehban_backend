@@ -1,8 +1,15 @@
+const mongoose = require('mongoose');
 const { z } = require('zod');
 const User = require('../models/User');
+const SosSession = require('../models/SosSession');
 
 const addContactSchema = z.object({
-  contactInfo: z.string().min(1, 'Contact info (phone, email, or CNIC) is required')
+  contactInfo: z.string().min(1, 'Contact info (phone, email, CNIC, or User ID) is required')
+});
+
+const updateProfileSchema = z.object({
+  name: z.string().optional(),
+  address: z.string().optional()
 });
 
 /**
@@ -11,12 +18,44 @@ const addContactSchema = z.object({
 const getProfile = async (req, res, next) => {
   try {
     const user = await User.findById(req.user._id)
-      .populate('trustedContacts', '_id phone cnic email role')
+      .populate('trustedContacts', '_id phone cnic email role name address')
       .select('-password');
 
     res.status(200).json({
       success: true,
       data: user
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Update current user profile name/address
+ */
+const updateProfile = async (req, res, next) => {
+  try {
+    const validatedData = updateProfileSchema.parse(req.body);
+    const { name, address } = validatedData;
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found.' });
+    }
+
+    if (name !== undefined) user.name = name;
+    if (address !== undefined) user.address = address;
+
+    await user.save();
+
+    const updatedUser = await User.findById(req.user._id)
+      .populate('trustedContacts', '_id phone cnic email role name address')
+      .select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: updatedUser
     });
   } catch (error) {
     next(error);
@@ -31,19 +70,24 @@ const addTrustedContact = async (req, res, next) => {
     const validatedData = addContactSchema.parse(req.body);
     const { contactInfo } = validatedData;
 
-    // Search contact by phone, email, or CNIC
-    const contactUser = await User.findOne({
-      $or: [
-        { phone: contactInfo },
-        { email: contactInfo.toLowerCase() },
-        { cnic: contactInfo }
-      ]
-    });
+    // Search contact by ID, phone, email, or CNIC
+    const isObjectId = mongoose.Types.ObjectId.isValid(contactInfo);
+    const contactQuery = isObjectId
+      ? { _id: contactInfo }
+      : {
+          $or: [
+            { phone: contactInfo },
+            { email: contactInfo.toLowerCase() },
+            { cnic: contactInfo }
+          ]
+        };
+
+    const contactUser = await User.findOne(contactQuery);
 
     if (!contactUser) {
       return res.status(404).json({
         success: false,
-        error: 'No user registered with this phone, email, or CNIC.'
+        error: 'No user registered with this ID, phone, email, or CNIC.'
       });
     }
 
@@ -74,7 +118,7 @@ const addTrustedContact = async (req, res, next) => {
     await user.save();
 
     const updatedUser = await User.findById(req.user._id)
-      .populate('trustedContacts', '_id phone cnic email role')
+      .populate('trustedContacts', '_id phone cnic email role name address')
       .select('-password');
 
     res.status(200).json({
@@ -113,7 +157,7 @@ const removeTrustedContact = async (req, res, next) => {
     await user.save();
 
     const updatedUser = await User.findById(req.user._id)
-      .populate('trustedContacts', '_id phone cnic email role')
+      .populate('trustedContacts', '_id phone cnic email role name address')
       .select('-password');
 
     res.status(200).json({
@@ -141,9 +185,191 @@ const getAllUsers = async (req, res, next) => {
   }
 };
 
+/**
+ * Fetch a single user details with guardian info (Admin/B2G only)
+ */
+const getUserDetails = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId)
+      .populate('trustedContacts', '_id phone cnic email role name address')
+      .select('-password');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found.'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get active alerts of users linked to this guardian
+ */
+const getGuardianAlerts = async (req, res, next) => {
+  try {
+    const guardianId = req.user._id;
+
+    // Find all users who have listed this guardian in their trustedContacts
+    const users = await User.find({ trustedContacts: guardianId }).select('_id');
+    const userIds = users.map(u => u._id);
+
+    // Find active SOS sessions for these users
+    const activeSessions = await SosSession.find({
+      user: { $in: userIds },
+      active: true
+    }).populate('user', 'phone cnic email name address lastLocation');
+
+    res.status(200).json({
+      success: true,
+      data: activeSessions
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get current/last known locations of users linked to this guardian
+ */
+const getGuardianLocations = async (req, res, next) => {
+  try {
+    const guardianId = req.user._id;
+
+    // Find users who have listed this guardian
+    const users = await User.find({ trustedContacts: guardianId })
+      .select('_id phone cnic email role name address lastLocation')
+      .sort({ name: 1 });
+
+    res.status(200).json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Send request location alert/notification and return user's last known location
+ */
+const requestLocationFromUser = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const guardianId = req.user._id;
+
+    const targetUser = await User.findById(userId);
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'Target user not found.' });
+    }
+
+    // Check authorization
+    const isLinked = targetUser.trustedContacts.some(
+      (contactId) => contactId.toString() === guardianId.toString()
+    );
+    if (!isLinked && !['SuperAdmin', 'B2G'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to request location for this user.' });
+    }
+
+    // Emit socket notification `location_request_received` to user if online
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:notifications:${userId}`).emit('location_request_received', {
+        requestedBy: {
+          _id: req.user._id,
+          phone: req.user.phone,
+          name: req.user.name || 'Guardian'
+        }
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Location request sent successfully.',
+      lastLocation: targetUser.lastLocation
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Trigger alert/SOS on behalf of the user
+ */
+const triggerAlertForUser = async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+    const guardianId = req.user._id;
+
+    const targetUser = await User.findById(userId).populate('trustedContacts', '_id phone');
+    if (!targetUser) {
+      return res.status(404).json({ success: false, error: 'Target user not found.' });
+    }
+
+    // Check authorization
+    const isLinked = targetUser.trustedContacts.some(
+      (contactId) => contactId.toString() === guardianId.toString()
+    );
+    if (!isLinked && !['SuperAdmin', 'B2G'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, error: 'Unauthorized to trigger alert for this user.' });
+    }
+
+    const sosService = require('../services/sos.service');
+    const initialCoords = targetUser.lastLocation && targetUser.lastLocation.coordinates
+      ? targetUser.lastLocation.coordinates
+      : [0, 0];
+
+    // Trigger SOS session
+    const session = await sosService.startSosSession(userId, initialCoords);
+
+    // Broadcast over sockets
+    const io = req.app.get('io');
+    if (io) {
+      targetUser.trustedContacts.forEach((contactId) => {
+        io.to(`user:notifications:${contactId}`).emit('sos_alert', {
+          reporterId: userId,
+          reporterPhone: targetUser.phone,
+          coordinates: initialCoords,
+          sessionId: session._id
+        });
+      });
+
+      // Broadcast alert to B2G dispatch operators
+      io.to('role:B2G').emit('sos_dispatch_alert', {
+        reporterId: userId,
+        reporterPhone: targetUser.phone,
+        coordinates: initialCoords,
+        sessionId: session._id
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'SOS session successfully triggered on behalf of user.',
+      session
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
+  updateProfile,
   addTrustedContact,
   removeTrustedContact,
-  getAllUsers
+  getAllUsers,
+  getUserDetails,
+  getGuardianAlerts,
+  getGuardianLocations,
+  requestLocationFromUser,
+  triggerAlertForUser
 };

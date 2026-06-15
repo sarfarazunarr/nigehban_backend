@@ -41,6 +41,27 @@ const UserSchema = new mongoose.Schema(
         ref: 'User'
       }
     ],
+    name: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: ''
+    },
+    lastLocation: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point'
+      },
+      coordinates: {
+        type: [Number],
+        default: [0, 0] // [longitude, latitude]
+      }
+    },
     trackingEnabled: {
       type: Boolean,
       default: false

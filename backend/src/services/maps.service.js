@@ -242,21 +242,9 @@ const getRouteSafety = async (origin, destination) => {
       }
     });
 
-    // Determine status
-    // Safe if no incidents nearby, moderately safe if 1-2 minor threats, unsafe if 3+ threats or severe incidents
-    const hasSevereIncident = nearbyIncidents.some(inc => ['kidnapping', 'physical_assault', 'domestic_violence'].includes(inc.category));
-    let safetyStatus = 'safe';
-    let safetyAssessment = 'This route is verified safe with no reported incidents nearby.';
-
-    if (nearbyIncidents.length > 0) {
-      if (nearbyIncidents.length >= 3 || hasSevereIncident) {
-        safetyStatus = 'unsafe';
-        safetyAssessment = `WARNING: This route is considered unsafe. There are ${nearbyIncidents.length} nearby threat incidents including severe threats like ${nearbyIncidents.map(i => i.category).join(', ')}.`;
-      } else {
-        safetyStatus = 'caution';
-        safetyAssessment = `CAUTION: This route has minor safety issues. There are ${nearbyIncidents.length} minor incident reports nearby.`;
-      }
-    }
+    // Determine status - safety status evaluations are disabled
+    let safetyStatus = 'unrated';
+    let safetyAssessment = 'Route safety rating is temporarily disabled.';
 
     return {
       routeIndex: idx,
@@ -265,8 +253,8 @@ const getRouteSafety = async (origin, destination) => {
       duration: route.legs[0].duration.text,
       safetyStatus,
       safetyAssessment,
-      nearbyIncidentsCount: nearbyIncidents.length,
-      nearbyIncidents,
+      nearbyIncidentsCount: 0,
+      nearbyIncidents: [],
       steps: route.legs[0].steps
     };
   }));

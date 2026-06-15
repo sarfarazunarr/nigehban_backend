@@ -187,4 +187,109 @@ module.exports = (io, socket) => {
       if (callback) callback({ success: false, error: error.message });
     }
   });
+
+  /**
+   * Guardian requests user's location
+   */
+  socket.on('guardian_request_location', async (data, callback) => {
+    try {
+      const { targetUserId } = data;
+      if (!targetUserId) {
+        throw new Error('Target User ID is required.');
+      }
+
+      const targetUser = await User.findById(targetUserId);
+      if (!targetUser) {
+        throw new Error('Target user not found.');
+      }
+
+      // Check authorization: target user must have added this guardian
+      const isLinked = targetUser.trustedContacts.some(
+        (contactId) => contactId.toString() === socket.user._id.toString()
+      );
+      if (!isLinked && !['SuperAdmin', 'B2G'].includes(socket.user.role)) {
+        throw new Error('Unauthorized to request location for this user.');
+      }
+
+      // Emit notification to user if online
+      io.to(`user:notifications:${targetUserId}`).emit('location_request_received', {
+        requestedBy: {
+          _id: socket.user._id,
+          phone: socket.user.phone,
+          name: socket.user.name || 'Guardian'
+        }
+      });
+
+      console.log(`[Socket Guardian] Guardian ${socket.user.phone} requested location for ward: ${targetUserId}`);
+
+      if (callback) {
+        callback({
+          success: true,
+          lastLocation: targetUser.lastLocation
+        });
+      }
+    } catch (error) {
+      console.error('Socket guardian_request_location error:', error.message);
+      if (callback) callback({ success: false, error: error.message });
+    }
+  });
+
+  /**
+   * Guardian triggers alert/SOS on behalf of the user
+   */
+  socket.on('guardian_trigger_alert', async (data, callback) => {
+    try {
+      const { targetUserId } = data;
+      if (!targetUserId) {
+        throw new Error('Target User ID is required.');
+      }
+
+      const targetUser = await User.findById(targetUserId).populate('trustedContacts', '_id phone');
+      if (!targetUser) {
+        throw new Error('Target user not found.');
+      }
+
+      // Check authorization
+      const isLinked = targetUser.trustedContacts.some(
+        (contactId) => contactId.toString() === socket.user._id.toString()
+      );
+      if (!isLinked && !['SuperAdmin', 'B2G'].includes(socket.user.role)) {
+        throw new Error('Unauthorized to trigger alert for this user.');
+      }
+
+      const initialCoords = targetUser.lastLocation && targetUser.lastLocation.coordinates
+        ? targetUser.lastLocation.coordinates
+        : [0, 0];
+
+      // Start SOS session
+      const session = await sosService.startSosSession(targetUserId, initialCoords);
+
+      // Broadcast alert to trusted contacts if online
+      targetUser.trustedContacts.forEach((contactId) => {
+        io.to(`user:notifications:${contactId}`).emit('sos_alert', {
+          reporterId: targetUserId,
+          reporterPhone: targetUser.phone,
+          coordinates: initialCoords,
+          sessionId: session._id
+        });
+      });
+
+      // Broadcast alert to B2G (police dispatch) rooms
+      io.to('role:B2G').emit('sos_dispatch_alert', {
+        reporterId: targetUserId,
+        reporterPhone: targetUser.phone,
+        coordinates: initialCoords,
+        sessionId: session._id
+      });
+
+      console.log(`[Socket Guardian] Guardian ${socket.user.phone} triggered SOS alert on behalf of ward: ${targetUserId}`);
+
+      if (callback) {
+        callback({ success: true, sessionId: session._id });
+      }
+    } catch (error) {
+      console.error('Socket guardian_trigger_alert error:', error.message);
+      if (callback) callback({ success: false, error: error.message });
+    }
+  });
 };

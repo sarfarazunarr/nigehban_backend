@@ -95,7 +95,8 @@ const state = {
     dashboard: null,
     incidents: null,
     users: null,
-    activeChats: null
+    activeChats: null,
+    resources: null
   }
 };
 
@@ -163,6 +164,30 @@ const DOM = {
   usersTbody: document.getElementById('users-tbody'),
   usersSearchInput: document.getElementById('users-search-input'),
   refreshUsersBtn: document.getElementById('refresh-users-btn'),
+  
+  // Safety Resources Elements
+  lawsListContainer: document.getElementById('laws-list-container'),
+  lawForm: document.getElementById('law-form'),
+  lawCategory: document.getElementById('law-category'),
+  lawTitle: document.getElementById('law-title'),
+  lawDescription: document.getElementById('law-description'),
+  lawInstructions: document.getElementById('law-instructions'),
+  lawPrecautions: document.getElementById('law-precautions'),
+  clearLawForm: document.getElementById('clear-law-form'),
+
+  contactsListContainer: document.getElementById('contacts-list-container'),
+  emergencyContactForm: document.getElementById('emergency-contact-form'),
+  contactId: document.getElementById('contact-id'),
+  contactName: document.getElementById('contact-name'),
+  contactPhone: document.getElementById('contact-phone'),
+  contactDescription: document.getElementById('contact-description'),
+  clearContactForm: document.getElementById('clear-contact-form'),
+
+  // User details modal elements
+  userModal: document.getElementById('user-modal'),
+  userModalCloseBtn: document.getElementById('user-modal-close-btn'),
+  userModalCancelBtn: document.getElementById('user-modal-cancel-btn'),
+  userModalContentDetails: document.getElementById('user-modal-content-details'),
   
   toastContainer: document.getElementById('toast-container')
 };
@@ -632,6 +657,10 @@ function switchTab(tabName) {
     fetchUsers();
     // 60s poll users list
     state.intervals.users = setInterval(fetchUsers, 60000);
+  } else if (tabName === 'resources') {
+    fetchResources();
+    // 45s poll resources
+    state.intervals.resources = setInterval(fetchResources, 45000);
   }
 }
 
@@ -1438,18 +1467,20 @@ function renderUsersTable() {
   const query = state.usersSearchQuery.toLowerCase().trim();
   
   const filteredUsers = state.users.filter(u => {
+    const name = (u.name || '').toLowerCase();
+    const address = (u.address || '').toLowerCase();
     const phone = (u.phone || '').toLowerCase();
     const email = (u.email || '').toLowerCase();
     const cnic = (u.cnic || '').toLowerCase();
     const role = (u.role || '').toLowerCase();
     
-    return phone.includes(query) || email.includes(query) || cnic.includes(query) || role.includes(query);
+    return name.includes(query) || address.includes(query) || phone.includes(query) || email.includes(query) || cnic.includes(query) || role.includes(query);
   });
   
   if (filteredUsers.length === 0) {
     DOM.usersTbody.innerHTML = `
       <tr>
-        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 50px;">
+        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 50px;">
           No registered users found.
         </td>
       </tr>
@@ -1459,6 +1490,8 @@ function renderUsersTable() {
   
   DOM.usersTbody.innerHTML = filteredUsers.map(u => {
     const id = u._id;
+    const name = u.name || '<span style="color:var(--text-muted)">N/A</span>';
+    const address = u.address || '<span style="color:var(--text-muted)">N/A</span>';
     const phone = u.phone || '<span style="color:var(--text-muted)">N/A</span>';
     const cnic = u.cnic || '<span style="color:var(--text-muted)">N/A</span>';
     const email = u.email || '<span style="color:var(--text-muted)">N/A</span>';
@@ -1471,9 +1504,11 @@ function renderUsersTable() {
     else if (role === 'Guardian') badgeStyle = 'background: rgba(25,135,84,0.15); color: var(--status-resolved);';
     
     return `
-      <tr>
-        <td style="font-family: monospace; font-size:0.8rem; color:var(--text-muted);">${id}</td>
-        <td><strong>${phone}</strong></td>
+      <tr style="cursor: pointer;" onclick="openUserDetailsModal('${id}')">
+        <td style="font-family: monospace; font-size:0.8rem; color:var(--text-muted);">${id.substring(0, 8)}...</td>
+        <td><strong>${name}</strong></td>
+        <td>${address}</td>
+        <td>${phone}</td>
         <td>${cnic}</td>
         <td>${email}</td>
         <td><span class="badge" style="${badgeStyle}">${role.toUpperCase()}</span></td>
@@ -1481,6 +1516,226 @@ function renderUsersTable() {
       </tr>
     `;
   }).join('');
+}
+
+// 16.5 Safety Resources & User Details Operations
+async function fetchResources() {
+  try {
+    // 1. Fetch Laws
+    const lawsRes = await fetchAuth(`${API_BASE}/laws`);
+    if (lawsRes && lawsRes.ok) {
+      const lawsData = await lawsRes.json();
+      renderLawsList(lawsData.data || []);
+    }
+
+    // 2. Fetch Emergency Contacts
+    const contactsRes = await fetchAuth(`${API_BASE}/emergency-contacts`);
+    if (contactsRes && contactsRes.ok) {
+      const contactsData = await contactsRes.json();
+      renderContactsList(contactsData.data || []);
+    }
+  } catch (error) {
+    console.error('Failed to load safety resources:', error);
+  }
+}
+
+function renderLawsList(laws) {
+  if (laws.length === 0) {
+    DOM.lawsListContainer.innerHTML = `
+      <div style="color: var(--text-muted); text-align: center; padding: 20px;">
+        No laws registered. Use the form above to add a new safety resource.
+      </div>
+    `;
+    return;
+  }
+
+  DOM.lawsListContainer.innerHTML = laws.map(law => {
+    const category = law.category.toUpperCase();
+    const instList = (law.survivalInstructions || []).map(i => `<li>${i}</li>`).join('');
+    const precList = (law.precautions || []).map(p => `<li>${p}</li>`).join('');
+
+    return `
+      <div class="activity-item" style="border: 1px solid var(--border-glass); border-radius: 8px; padding: 12px; background: rgba(255,255,255,0.02);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <strong style="color: var(--accent-cyan); font-size: 0.8rem; letter-spacing: 0.5px;">${category}</strong>
+            <h4 style="margin: 4px 0 8px 0; color: var(--text-white);">${law.title}</h4>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(102,252,241,0.1); color: var(--accent-cyan);" onclick="editLaw('${law.category}')">Edit</button>
+            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(220,53,69,0.1); color: var(--status-dismissed);" onclick="deleteLaw('${law.category}')">Delete</button>
+          </div>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-gray); line-height: 1.4; margin-bottom: 8px;">${law.legalDescription}</p>
+        
+        <strong style="font-size: 0.75rem; color: var(--text-white); display: block; margin-top: 8px;">Survival Instructions:</strong>
+        <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 15px; margin: 4px 0 8px 0;">
+          ${instList}
+        </ul>
+
+        ${precList ? `
+          <strong style="font-size: 0.75rem; color: var(--text-white); display: block; margin-top: 8px;">Precautions:</strong>
+          <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 15px; margin: 4px 0 0 0;">
+            ${precList}
+          </ul>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+window.editLaw = async function(category) {
+  try {
+    const res = await fetchAuth(`${API_BASE}/laws/category/${category}`);
+    if (res && res.ok) {
+      const result = await res.json();
+      const law = result.data;
+      if (law) {
+        DOM.lawCategory.value = law.category;
+        DOM.lawTitle.value = law.title;
+        DOM.lawDescription.value = law.legalDescription;
+        DOM.lawInstructions.value = (law.survivalInstructions || []).join('\n');
+        DOM.lawPrecautions.value = (law.precautions || []).join('\n');
+        DOM.lawForm.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  } catch (error) {
+    showToast('Failed to fetch law details: ' + error.message, 'error');
+  }
+};
+
+window.deleteLaw = async function(category) {
+  if (!confirm(`Are you sure you want to delete safety resource for category '${category}'?`)) return;
+
+  try {
+    const res = await fetchAuth(`${API_BASE}/laws/category/${category}`, {
+      method: 'DELETE'
+    });
+    if (res && res.ok) {
+      showToast('Safety resource deleted successfully.', 'info');
+      fetchResources();
+    } else {
+      const errData = await res.json();
+      throw new Error(errData.error || 'Delete failed.');
+    }
+  } catch (error) {
+    showToast('Failed to delete law: ' + error.message, 'error');
+  }
+};
+
+function renderContactsList(contacts) {
+  if (contacts.length === 0) {
+    DOM.contactsListContainer.innerHTML = `
+      <div style="color: var(--text-muted); text-align: center; padding: 20px;">
+        No emergency helplines registered.
+      </div>
+    `;
+    return;
+  }
+
+  DOM.contactsListContainer.innerHTML = contacts.map(c => {
+    return `
+      <div class="activity-item" style="border: 1px solid var(--border-glass); border-radius: 8px; padding: 12px; background: rgba(255,255,255,0.02);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h4 style="margin: 0 0 4px 0; color: var(--text-white);">${c.name}</h4>
+            <strong style="color: var(--accent-cyan); font-size: 1rem; font-family: monospace;">${c.phone}</strong>
+            ${c.description ? `<p style="font-size: 0.8rem; color: var(--text-muted); margin: 4px 0 0 0;">${c.description}</p>` : ''}
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(102,252,241,0.1); color: var(--accent-cyan);" onclick="editContact('${c._id}', '${escapeHtml(c.name)}', '${escapeHtml(c.phone)}', '${escapeHtml(c.description || '')}')">Edit</button>
+            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(220,53,69,0.1); color: var(--status-dismissed);" onclick="deleteContact('${c._id}')">Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+window.editContact = function(id, name, phone, description) {
+  DOM.contactId.value = id;
+  DOM.contactName.value = name;
+  DOM.contactPhone.value = phone;
+  DOM.contactDescription.value = description;
+  DOM.emergencyContactForm.scrollIntoView({ behavior: 'smooth' });
+};
+
+window.deleteContact = async function(id) {
+  if (!confirm('Are you sure you want to delete this emergency contact?')) return;
+
+  try {
+    const res = await fetchAuth(`${API_BASE}/emergency-contacts/${id}`, {
+      method: 'DELETE'
+    });
+    if (res && res.ok) {
+      showToast('Emergency contact deleted successfully.', 'info');
+      fetchResources();
+    } else {
+      const errData = await res.json();
+      throw new Error(errData.error || 'Delete failed.');
+    }
+  } catch (error) {
+    showToast('Failed to delete helpline: ' + error.message, 'error');
+  }
+};
+
+window.openUserDetailsModal = async function(userId) {
+  try {
+    const res = await fetchAuth(`${API_BASE}/profile/users/${userId}`);
+    if (!res.ok) throw new Error('Failed to retrieve user details.');
+    
+    const result = await res.json();
+    const u = result.data;
+    
+    const date = new Date(u.createdAt).toLocaleString();
+    const guardiansHtml = u.trustedContacts && u.trustedContacts.length > 0
+      ? u.trustedContacts.map(g => `
+          <div style="border: 1px solid var(--border-glass); border-radius: 8px; padding: 10px; background: rgba(255,255,255,0.02); display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
+            <p style="margin:0;"><strong>Name:</strong> ${g.name || '<span style="color:var(--text-muted)">N/A</span>'}</p>
+            <p style="margin:0; font-size:0.85rem;"><strong>Phone:</strong> ${g.phone}</p>
+            <p style="margin:0; font-size:0.85rem;"><strong>CNIC:</strong> ${g.cnic}</p>
+            <p style="margin:0; font-size:0.85rem;"><strong>Email:</strong> ${g.email}</p>
+            ${g.address ? `<p style="margin:0; font-size:0.85rem;"><strong>Address:</strong> ${g.address}</p>` : ''}
+          </div>
+        `).join('')
+      : '<p style="color:var(--text-muted); font-size:0.9rem;">No guardians/trusted contacts linked.</p>';
+      
+    DOM.userModalContentDetails.innerHTML = `
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 10px;">
+        <div class="modal-section" style="background:rgba(0,0,0,0.15); padding:15px; border-radius:12px; border:1px solid var(--border-glass);">
+          <h4 style="margin-bottom:12px; color:var(--accent-cyan);">User Profile Details</h4>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Name:</strong> ${u.name || '<span style="color:var(--text-muted)">Not Set</span>'}</p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Phone:</strong> ${u.phone}</p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>CNIC Identity:</strong> ${u.cnic}</p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Email Address:</strong> ${u.email}</p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Address:</strong> ${u.address || '<span style="color:var(--text-muted)">Not Set</span>'}</p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Assigned Role:</strong> <span class="badge" style="background: rgba(102,252,241,0.15); color: var(--accent-cyan);">${u.role.toUpperCase()}</span></p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Registered Date:</strong> ${date}</p>
+          <p style="margin-bottom:6px; font-size:0.9rem;"><strong>Tracking Enabled:</strong> ${u.trackingEnabled ? 'Yes' : 'No'}</p>
+          <p style="margin-bottom:0; font-size:0.9rem;"><strong>Subscription Tier:</strong> ${u.subscriptionTier}</p>
+        </div>
+        
+        <div class="modal-section" style="background:rgba(0,0,0,0.15); padding:15px; border-radius:12px; border:1px solid var(--border-glass);">
+          <h4 style="margin-bottom:12px; color:var(--accent-cyan);">Linked Guardians / Contacts</h4>
+          <div style="max-height: 250px; overflow-y: auto;">
+            ${guardiansHtml}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    DOM.userModal.style.display = 'flex';
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+};
+
+function closeUserModal() {
+  DOM.userModal.style.display = 'none';
 }
 
 // 17. Bind UI DOM Event Listeners
@@ -1625,6 +1880,88 @@ function bindEvents() {
   DOM.refreshUsersBtn.addEventListener('click', () => {
     fetchUsers();
     showToast('Users directory refreshed.', 'info');
+  });
+
+  // Safety Resources - Law form submit
+  DOM.lawForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const category = DOM.lawCategory.value;
+    const title = DOM.lawTitle.value.trim();
+    const legalDescription = DOM.lawDescription.value.trim();
+    const survivalInstructions = DOM.lawInstructions.value.split('\n').map(i => i.trim()).filter(Boolean);
+    const precautions = DOM.lawPrecautions.value.split('\n').map(p => p.trim()).filter(Boolean);
+    
+    try {
+      const response = await fetchAuth(`${API_BASE}/laws`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, title, legalDescription, survivalInstructions, precautions })
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to save safety resource.');
+      }
+      
+      showToast('Law safety resource saved successfully.', 'info');
+      DOM.lawForm.reset();
+      fetchResources();
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // Safety Resources - Clear law form
+  DOM.clearLawForm.addEventListener('click', () => {
+    DOM.lawForm.reset();
+  });
+
+  // Safety Resources - Emergency contact form submit
+  DOM.emergencyContactForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const id = DOM.contactId.value || undefined;
+    const name = DOM.contactName.value.trim();
+    const phone = DOM.contactPhone.value.trim();
+    const description = DOM.contactDescription.value.trim() || undefined;
+    
+    try {
+      const response = await fetchAuth(`${API_BASE}/emergency-contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, phone, description })
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to save emergency contact.');
+      }
+      
+      showToast('Emergency contact helpline saved successfully.', 'info');
+      DOM.emergencyContactForm.reset();
+      DOM.contactId.value = '';
+      fetchResources();
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  });
+
+  // Safety Resources - Clear contact form
+  DOM.clearContactForm.addEventListener('click', () => {
+    DOM.emergencyContactForm.reset();
+    DOM.contactId.value = '';
+  });
+
+  // User details modal close buttons
+  DOM.userModalCloseBtn.addEventListener('click', closeUserModal);
+  DOM.userModalCancelBtn.addEventListener('click', closeUserModal);
+
+  // Close user modal when clicking outside
+  DOM.userModal.addEventListener('click', (e) => {
+    if (e.target === DOM.userModal) {
+      closeUserModal();
+    }
   });
 }
 

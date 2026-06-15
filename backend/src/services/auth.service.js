@@ -24,7 +24,7 @@ const signRefreshToken = (userId) => {
  * Registers a new user in the system
  */
 const registerUser = async (userData) => {
-  const { phone, cnic, email, password, role } = userData;
+  const { phone, cnic, email, password, role, name, address } = userData;
 
   // Check if user already exists
   const existingUser = await User.findOne({
@@ -42,7 +42,9 @@ const registerUser = async (userData) => {
     cnic,
     email,
     password,
-    role: role || 'User'
+    role: role || 'User',
+    name: name || '',
+    address: address || ''
   });
 
   const accessToken = signAccessToken(user._id);

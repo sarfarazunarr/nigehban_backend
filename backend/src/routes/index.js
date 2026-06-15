@@ -9,6 +9,7 @@ const lawRoutes = require('./law.routes');
 const mapsRoutes = require('./maps.routes');
 const chatRoutes = require('./chat.routes');
 const communityRoutes = require('./community.routes');
+const emergencyContactRoutes = require('./emergencyContact.routes');
 
 // Healthcheck endpoint
 router.get('/health', (req, res) => {
@@ -28,5 +29,6 @@ router.use('/laws', lawRoutes);
 router.use('/routes', mapsRoutes);
 router.use('/chat', chatRoutes);
 router.use('/community', communityRoutes);
+router.use('/emergency-contacts', emergencyContactRoutes);
 
 module.exports = router;

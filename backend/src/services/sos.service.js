@@ -66,6 +66,15 @@ const startSosSession = async (userId, initialCoordinates) => {
     }
   }
 
+  if (initialCoordinates) {
+    await User.findByIdAndUpdate(userId, {
+      lastLocation: {
+        type: 'Point',
+        coordinates: initialCoordinates
+      }
+    });
+  }
+
   return session;
 };
 
@@ -112,6 +121,14 @@ const pingSosLocation = async (userId, coordinates) => {
     },
     { new: true }
   );
+
+  // Also update User's lastLocation
+  await User.findByIdAndUpdate(userId, {
+    lastLocation: {
+      type: 'Point',
+      coordinates
+    }
+  });
 
   return session;
 };
