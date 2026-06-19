@@ -58,7 +58,7 @@ const state = {
   token: localStorage.getItem('nigehbaan_access_token') || '',
   refreshToken: localStorage.getItem('nigehbaan_refresh_token') || '',
   user: null,
-  socket: null,
+  pusher: null,
   activeTab: 'dashboard',
 
   // Lists & Feeds
@@ -188,6 +188,12 @@ const DOM = {
   userModalCloseBtn: document.getElementById('user-modal-close-btn'),
   userModalCancelBtn: document.getElementById('user-modal-cancel-btn'),
   userModalContentDetails: document.getElementById('user-modal-content-details'),
+
+  // Safety resource details modal elements
+  resourceModal: document.getElementById('resource-modal'),
+  resourceModalCloseBtn: document.getElementById('resource-modal-close-btn'),
+  resourceModalCancelBtn: document.getElementById('resource-modal-cancel-btn'),
+  resourceModalContentDetails: document.getElementById('resource-modal-content-details'),
   
   toastContainer: document.getElementById('toast-container')
 };
@@ -364,7 +370,7 @@ async function login(phoneOrEmail, password) {
       DOM.portalContainer.style.display = 'flex';
       
       // Initialize systems
-      initSocket();
+      initPusher();
       switchTab('dashboard');
     }, 300);
     
@@ -375,10 +381,10 @@ async function login(phoneOrEmail, password) {
 }
 
 function logout() {
-  // Disconnect Socket
-  if (state.socket) {
-    state.socket.disconnect();
-    state.socket = null;
+  // Disconnect Pusher
+  if (state.pusher) {
+    state.pusher.disconnect();
+    state.pusher = null;
   }
   
   // Clear State & localstorage
@@ -434,7 +440,7 @@ async function verifySession() {
         DOM.loginOverlay.style.display = 'none';
         DOM.portalContainer.style.display = 'flex';
         
-        initSocket();
+        initPusher();
         switchTab('dashboard');
       } else {
         logout();
@@ -445,41 +451,20 @@ async function verifySession() {
   }
 }
 
-// 9. Realtime WebSockets Connection (Socket.io)
-function initSocket() {
-  if (state.socket) return;
+// 9. Realtime Pusher Connection
+function initPusher() {
+  if (state.pusher) return;
   
-  console.log('[Sockets] Establishing connection...');
-  state.socket = io(SOCKET_BASE, {
-    auth: {
-      token: state.token
-    }
+  console.log('[Pusher] Establishing connection...');
+  state.pusher = new Pusher(import.meta.env.VITE_PUSHER_KEY || '8becfba0db54590a6632', {
+    cluster: import.meta.env.VITE_PUSHER_CLUSTER || 'ap2',
+    forceTLS: true
   });
   
-  state.socket.on('connect', () => {
-    console.log(`[Sockets] Connected successfully. Socket ID: ${state.socket.id}`);
-    
-    // Register dispatcher operator
-    state.socket.emit('register_operator', (res) => {
-      if (res && res.success) {
-        console.log('[Sockets] Registered in operator listening pool successfully.');
-      } else {
-        console.warn('[Sockets] Failed to register operator pool:', res ? res.error : 'No response');
-      }
-    });
-  });
-  
-  state.socket.on('connect_error', (err) => {
-    console.error('[Sockets] Connection handshake error:', err.message);
-    if (err.message.includes('expired') || err.message.includes('failed')) {
-      // Re-verify session to trigger token refresh
-      verifySession();
-    }
-  });
-
   // Real-time Event: Live SOS Triggered Alert
-  state.socket.on('sos_dispatch_alert', (data) => {
-    console.log('[Sockets] SOS dispatch alert received:', data);
+  const roleB2GChannel = state.pusher.subscribe('role-B2G');
+  roleB2GChannel.bind('sos_dispatch_alert', (data) => {
+    console.log('[Pusher] SOS dispatch alert received:', data);
     showToast(`SOS Triggered by ${data.reporterPhone}! Dispatch units alert.`, 'sos');
     
     // Refresh SOS and Dashboard
@@ -488,105 +473,19 @@ function initSocket() {
       fetchDashboardMetrics();
     }
   });
-  
-  // Real-time Event: GPS location coordinates trace ping
-  state.socket.on('location_update', (data) => {
-    console.log('[Sockets] Live location tracking ping:', data);
-    
-    // Update map path array if this is the active user SOS being tracked
-    if (state.selectedSosId === data.userId) {
-      const coord = [data.coordinates[1], data.coordinates[0]]; // [lat, lng]
-      state.trackingCoordinates.push(coord);
-      
-      // Update UI marker and path
-      if (state.maps.tracking) {
-        // Redraw polyline
-        if (state.trackingPolyline) {
-          state.trackingPolyline.setLatLngs(state.trackingCoordinates);
-        } else {
-          state.trackingPolyline = L.polyline(state.trackingCoordinates, { color: '#d90429', weight: 4 }).addTo(state.maps.tracking);
-        }
-        
-        // Update user marker
-        if (state.markers.trackingUser) {
-          state.markers.trackingUser.setLatLng(coord);
-        } else {
-          const sosIcon = L.divIcon({
-            className: 'sos-marker-container',
-            html: '<div class="sos-marker-pulse"></div><div class="sos-marker-dot"></div>',
-            iconSize: [24, 24],
-            iconAnchor: [12, 12]
-          });
-          state.markers.trackingUser = L.marker(coord, { icon: sosIcon }).addTo(state.maps.tracking);
-        }
-        
-        state.maps.tracking.panTo(coord);
-        
-        // Append telemetry log to UI
-        const telLog = document.getElementById('sos-telemetry-log');
-        if (telLog) {
-          const time = new Date(data.timestamp).toLocaleTimeString();
-          const p = document.createElement('p');
-          p.innerHTML = `<span style="color: var(--accent-cyan); font-weight:600;">[${time}]</span> Telemetry Ping: ${data.coordinates[1].toFixed(5)}, ${data.coordinates[0].toFixed(5)}`;
-          telLog.appendChild(p);
-          telLog.scrollTop = telLog.scrollHeight;
-        }
-      }
-    }
-    
-    // Update marker coordinates in general dashboard map
-    if (state.maps.dashboard && state.markers.dashboardSos[data.userId]) {
-      const coord = [data.coordinates[1], data.coordinates[0]];
-      state.markers.dashboardSos[data.userId].setLatLng(coord);
-    }
-  });
-  
-  // Real-time Event: User resolves SOS
-  state.socket.on('sos_resolved', (data) => {
-    console.log('[Sockets] SOS session resolved by user:', data);
-    showToast(`SOS session resolved for user ${data.userId}. Clear track.`, 'info');
-    
-    // Clear marker from dashboard map
-    if (state.maps.dashboard && state.markers.dashboardSos[data.userId]) {
-      state.maps.dashboard.removeLayer(state.markers.dashboardSos[data.userId]);
-      delete state.markers.dashboardSos[data.userId];
-    }
-    
-    // Reset active selected tracker if resolving this
-    if (state.selectedSosId === data.userId) {
-      state.selectedSosId = null;
-      if (state.markers.trackingUser) {
-        state.maps.tracking.removeLayer(state.markers.trackingUser);
-        state.markers.trackingUser = null;
-      }
-      if (state.trackingPolyline) {
-        state.maps.tracking.removeLayer(state.trackingPolyline);
-        state.trackingPolyline = null;
-      }
-      state.trackingCoordinates = [];
-      DOM.sosTrackingDetails.innerHTML = `
-        <h3>SOS Session Closed</h3>
-        <p>This SOS event was marked resolved. Select another active card from the left panel.</p>
-      `;
-    }
-    
-    fetchActiveSos();
-    if (state.activeTab === 'dashboard') {
-      fetchDashboardMetrics();
-    }
-  });
-  
+
   // Real-time Event: Operator Chat Handoff requested
-  state.socket.on('handoff_request', (data) => {
-    console.log('[Sockets] Handoff takeover request received:', data);
+  const operatorsChannel = state.pusher.subscribe('operators');
+  operatorsChannel.bind('handoff_request', (data) => {
+    console.log('[Pusher] Handoff takeover request received:', data);
     showToast(`Takeover requested: user ${data.phone} needs operator!`, 'handoff');
     
     fetchActiveChats();
   });
   
   // Real-time Event: User messages during human mode
-  state.socket.on('operator_receive_message', (data) => {
-    console.log('[Sockets] User chat message received in human mode:', data);
+  operatorsChannel.bind('operator_receive_message', (data) => {
+    console.log('[Pusher] User chat message received in human mode:', data);
     
     // Increment unread counts or update sidebar UI lists
     fetchActiveChats();
@@ -598,16 +497,12 @@ function initSocket() {
   });
   
   // Real-time Event: Sync messages typed by other operator consoles
-  state.socket.on('operator_message_sync', (data) => {
-    console.log('[Sockets] Syncing operator response message:', data);
+  operatorsChannel.bind('operator_message_sync', (data) => {
+    console.log('[Pusher] Syncing operator response message:', data);
     
     if (state.selectedChatUserId === data.userId) {
       appendChatMessage('operator', data.content, new Date(data.timestamp));
     }
-  });
-  
-  state.socket.on('disconnect', () => {
-    console.warn('[Sockets] Disconnected from websocket server.');
   });
 }
 
@@ -657,7 +552,7 @@ function switchTab(tabName) {
     fetchUsers();
     // 60s poll users list
     state.intervals.users = setInterval(fetchUsers, 60000);
-  } else if (tabName === 'resources') {
+  } else if (tabName === 'resources' || tabName === 'contacts') {
     fetchResources();
     // 45s poll resources
     state.intervals.resources = setInterval(fetchResources, 45000);
@@ -932,8 +827,8 @@ window.selectSosTracking = async function(userId) {
   if (state.selectedSosId === userId) return;
   
   // 1. Unsubscribe from current room if any
-  if (state.selectedSosId && state.socket) {
-    state.socket.emit('unsubscribe_tracking', { targetUserId: state.selectedSosId });
+  if (state.selectedSosId && state.pusher) {
+    state.pusher.unsubscribe(`sos-room-${state.selectedSosId}`);
   }
   
   state.selectedSosId = userId;
@@ -1001,8 +896,10 @@ window.selectSosTracking = async function(userId) {
     <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
       <div>
         <h4 style="color:var(--accent-cyan); font-size:0.8rem; margin-bottom: 6px;">VICTIM PROFILE</h4>
+        <p style="margin-bottom:4px;"><strong>Name:</strong> ${session.user.name || 'Unknown'}</p>
         <p style="margin-bottom:4px;"><strong>Phone Number:</strong> ${session.user.phone || 'Unknown'}</p>
         <p style="margin-bottom:4px;"><strong>National CNIC:</strong> ${session.user.cnic || 'N/A'}</p>
+        <p style="margin-bottom:4px;"><strong>Home Address:</strong> ${session.user.address || 'N/A'}</p>
         <p style="margin-bottom:4px;"><strong>Session Started:</strong> ${startTime}</p>
       </div>
       <div>
@@ -1028,11 +925,92 @@ window.selectSosTracking = async function(userId) {
   const telLog = document.getElementById('sos-telemetry-log');
   if (telLog) telLog.scrollTop = telLog.scrollHeight;
   
-  // 4. Subscribe over sockets for live coordinate updates
-  if (state.socket) {
-    state.socket.emit('subscribe_tracking', { targetUserId: userId }, (res) => {
-      if (res && res.success) {
-        console.log(`[Sockets] Successfully subscribed tracking notifications for user: ${userId}`);
+  // 4. Subscribe over Pusher for live coordinate updates
+  if (state.pusher) {
+    const sosChannel = state.pusher.subscribe(`sos-room-${userId}`);
+    
+    sosChannel.bind('location_update', (data) => {
+      console.log('[Pusher] Live location tracking ping:', data);
+      
+      // Update map path array if this is the active user SOS being tracked
+      if (state.selectedSosId === data.userId) {
+        const coord = [data.coordinates[1], data.coordinates[0]]; // [lat, lng]
+        state.trackingCoordinates.push(coord);
+        
+        // Update UI marker and path
+        if (state.maps.tracking) {
+          // Redraw polyline
+          if (state.trackingPolyline) {
+            state.trackingPolyline.setLatLngs(state.trackingCoordinates);
+          } else {
+            state.trackingPolyline = L.polyline(state.trackingCoordinates, { color: '#d90429', weight: 4 }).addTo(state.maps.tracking);
+          }
+          
+          // Update user marker
+          if (state.markers.trackingUser) {
+            state.markers.trackingUser.setLatLng(coord);
+          } else {
+            const sosIcon = L.divIcon({
+              className: 'sos-marker-container',
+              html: '<div class="sos-marker-pulse"></div><div class="sos-marker-dot"></div>',
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            });
+            state.markers.trackingUser = L.marker(coord, { icon: sosIcon }).addTo(state.maps.tracking);
+          }
+          
+          state.maps.tracking.panTo(coord);
+          
+          // Append telemetry log to UI
+          const telLog = document.getElementById('sos-telemetry-log');
+          if (telLog) {
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const p = document.createElement('p');
+            p.innerHTML = `<span style="color: var(--accent-cyan); font-weight:600;">[${time}]</span> Telemetry Ping: ${data.coordinates[1].toFixed(5)}, ${data.coordinates[0].toFixed(5)}`;
+            telLog.appendChild(p);
+            telLog.scrollTop = telLog.scrollHeight;
+          }
+        }
+      }
+      
+      // Update marker coordinates in general dashboard map
+      if (state.maps.dashboard && state.markers.dashboardSos[data.userId]) {
+        const coord = [data.coordinates[1], data.coordinates[0]];
+        state.markers.dashboardSos[data.userId].setLatLng(coord);
+      }
+    });
+
+    sosChannel.bind('sos_resolved', (data) => {
+      console.log('[Pusher] SOS session resolved by user:', data);
+      showToast(`SOS session resolved for user ${data.userId}. Clear track.`, 'info');
+      
+      // Clear marker from dashboard map
+      if (state.maps.dashboard && state.markers.dashboardSos[data.userId]) {
+        state.maps.dashboard.removeLayer(state.markers.dashboardSos[data.userId]);
+        delete state.markers.dashboardSos[data.userId];
+      }
+      
+      // Reset active selected tracker if resolving this
+      if (state.selectedSosId === data.userId) {
+        state.selectedSosId = null;
+        if (state.markers.trackingUser) {
+          state.maps.tracking.removeLayer(state.markers.trackingUser);
+          state.markers.trackingUser = null;
+        }
+        if (state.trackingPolyline) {
+          state.maps.tracking.removeLayer(state.trackingPolyline);
+          state.trackingPolyline = null;
+        }
+        state.trackingCoordinates = [];
+        DOM.sosTrackingDetails.innerHTML = `
+          <h3>SOS Session Closed</h3>
+          <p>This SOS event was marked resolved. Select another active card from the left panel.</p>
+        `;
+      }
+      
+      fetchActiveSos();
+      if (state.activeTab === 'dashboard') {
+        fetchDashboardMetrics();
       }
     });
   }
@@ -1174,7 +1152,7 @@ window.openIncidentModal = async function(incidentId) {
     
     const date = new Date(inc.timestamp || inc.createdAt).toLocaleString();
     const reporter = inc.reporter 
-      ? `Phone: ${inc.reporter.phone} | CNIC: ${inc.reporter.cnic}` 
+      ? `Name: ${inc.reporter.name || 'Unknown'} | Phone: ${inc.reporter.phone} | CNIC: ${inc.reporter.cnic} | Address: ${inc.reporter.address || 'N/A'}` 
       : 'Anonymous User';
       
     // Render media list
@@ -1396,20 +1374,28 @@ function appendChatMessage(sender, content, timestamp) {
 }
 
 async function sendChatReply(text) {
-  if (!state.selectedChatUserId || !state.socket) return;
+  if (!state.selectedChatUserId) return;
   
   const targetId = state.selectedChatUserId;
   
-  // Send over websockets
-  state.socket.emit('operator_reply', { targetUserId: targetId, text }, (res) => {
-    if (res && res.success) {
-      DOM.chatMsgInput.value = '';
-      appendChatMessage('operator', text, new Date());
-      fetchActiveChats();
-    } else {
-      showToast(res ? res.error : 'Failed to deliver response message.', 'error');
+  try {
+    const response = await fetchAuth(`${API_BASE}/chat/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUserId: targetId, text })
+    });
+    
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || 'Failed to deliver response message.');
     }
-  });
+    
+    DOM.chatMsgInput.value = '';
+    appendChatMessage('operator', text, new Date());
+    fetchActiveChats();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
 }
 
 async function closeActiveChatSession() {
@@ -1551,47 +1537,43 @@ function renderLawsList(laws) {
 
   DOM.lawsListContainer.innerHTML = laws.map(law => {
     const category = law.category.toUpperCase();
-    const instList = (law.survivalInstructions || []).map(i => `<li>${i}</li>`).join('');
-    const precList = (law.precautions || []).map(p => `<li>${p}</li>`).join('');
-
+    const langBadgeColor = law.language === 'urdu' ? 'var(--status-inprogress)' : (law.language === 'sindhi' ? 'var(--status-resolved)' : 'var(--accent-cyan)');
+    
     return `
-      <div class="activity-item" style="border: 1px solid var(--border-glass); border-radius: 8px; padding: 12px; background: rgba(255,255,255,0.02);">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div class="activity-item law-card-minimal" style="border: 1px solid var(--border-glass); border-radius: 12px; padding: 16px; background: rgba(255,255,255,0.03); transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
           <div>
-            <strong style="color: var(--accent-cyan); font-size: 0.8rem; letter-spacing: 0.5px;">${category}</strong>
-            <h4 style="margin: 4px 0 8px 0; color: var(--text-white);">${law.title}</h4>
+            <span class="badge" style="background: rgba(102,252,241,0.1); color: var(--accent-cyan); font-size: 0.75rem; font-weight: 600; padding: 4px 8px; border-radius: 6px; text-transform: uppercase;">${category}</span>
+            <span class="badge" style="background: rgba(255,255,255,0.05); color: ${langBadgeColor}; font-size: 0.75rem; font-weight: 600; padding: 4px 8px; border-radius: 6px; margin-left: 6px; text-transform: capitalize;">${law.language}</span>
           </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(102,252,241,0.1); color: var(--accent-cyan);" onclick="editLaw('${law.category}')">Edit</button>
-            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(220,53,69,0.1); color: var(--status-dismissed);" onclick="deleteLaw('${law.category}')">Delete</button>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(102,252,241,0.1); color: var(--accent-cyan); border: 1px solid rgba(102,252,241,0.2); border-radius: 6px; cursor: pointer; transition: all 0.2s;" onclick="editLaw('${law.category}', '${law.language}')">
+              <i class="fa-solid fa-pen-to-square"></i> Edit
+            </button>
+            <button class="btn" style="padding: 4px 8px; font-size: 0.75rem; background: rgba(220,53,69,0.1); color: var(--status-dismissed); border: 1px solid rgba(220,53,69,0.2); border-radius: 6px; cursor: pointer; transition: all 0.2s;" onclick="deleteLaw('${law.category}', '${law.language}')">
+              <i class="fa-solid fa-trash-can"></i> Delete
+            </button>
           </div>
         </div>
-        <p style="font-size: 0.85rem; color: var(--text-gray); line-height: 1.4; margin-bottom: 8px;">${law.legalDescription}</p>
-        
-        <strong style="font-size: 0.75rem; color: var(--text-white); display: block; margin-top: 8px;">Survival Instructions:</strong>
-        <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 15px; margin: 4px 0 8px 0;">
-          ${instList}
-        </ul>
-
-        ${precList ? `
-          <strong style="font-size: 0.75rem; color: var(--text-white); display: block; margin-top: 8px;">Precautions:</strong>
-          <ul style="font-size: 0.8rem; color: var(--text-muted); padding-left: 15px; margin: 4px 0 0 0;">
-            ${precList}
-          </ul>
-        ` : ''}
+        <h4 style="margin: 0 0 14px 0; color: var(--text-white); font-family: 'Outfit', sans-serif; font-size: 1.05rem; font-weight: 600; line-height: 1.3;">${law.title}</h4>
+        <button class="btn-primary" style="width: 100%; padding: 8px; font-size: 0.85rem; border-radius: 8px; background: linear-gradient(135deg, var(--accent-cyan) 0%, #0b8793 100%); color: var(--bg-primary); font-weight: 600; border: none; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;" onclick="openResourceDetailsModal('${law.category}', '${law.language}')">
+          <i class="fa-solid fa-eye" style="margin-right: 4px;"></i> View Full Details
+        </button>
       </div>
     `;
   }).join('');
 }
 
-window.editLaw = async function(category) {
+window.editLaw = async function(category, language) {
   try {
-    const res = await fetchAuth(`${API_BASE}/laws/category/${category}`);
+    const res = await fetchAuth(`${API_BASE}/laws/category/${category}/${language || 'english'}`);
     if (res && res.ok) {
       const result = await res.json();
       const law = result.data;
       if (law) {
         DOM.lawCategory.value = law.category;
+        const lawLanguage = document.getElementById('law-language');
+        if (lawLanguage) lawLanguage.value = law.language;
         DOM.lawTitle.value = law.title;
         DOM.lawDescription.value = law.legalDescription;
         DOM.lawInstructions.value = (law.survivalInstructions || []).join('\n');
@@ -1604,11 +1586,11 @@ window.editLaw = async function(category) {
   }
 };
 
-window.deleteLaw = async function(category) {
-  if (!confirm(`Are you sure you want to delete safety resource for category '${category}'?`)) return;
+window.deleteLaw = async function(category, language) {
+  if (!confirm(`Are you sure you want to delete safety resource for category '${category}' in language '${language}'?`)) return;
 
   try {
-    const res = await fetchAuth(`${API_BASE}/laws/category/${category}`, {
+    const res = await fetchAuth(`${API_BASE}/laws/category/${category}/${language}`, {
       method: 'DELETE'
     });
     if (res && res.ok) {
@@ -1622,6 +1604,56 @@ window.deleteLaw = async function(category) {
     showToast('Failed to delete law: ' + error.message, 'error');
   }
 };
+
+window.openResourceDetailsModal = async function(category, language) {
+  try {
+    const res = await fetchAuth(`${API_BASE}/laws/category/${category}/${language || 'english'}`);
+    if (!res.ok) throw new Error('Failed to retrieve safety resource details.');
+    
+    const result = await res.json();
+    const law = result.data;
+    if (!law) throw new Error('Safety resource not found.');
+    
+    const instList = (law.survivalInstructions || []).map(i => `<li style="margin-bottom: 8px; line-height: 1.4;"><i class="fa-solid fa-circle-chevron-right" style="color: var(--accent-cyan); margin-right: 8px;"></i>${i}</li>`).join('');
+    const precList = (law.precautions || []).map(p => `<li style="margin-bottom: 8px; line-height: 1.4;"><i class="fa-solid fa-triangle-exclamation" style="color: var(--status-pending); margin-right: 8px;"></i>${p}</li>`).join('');
+    
+    const langBadgeColor = law.language === 'urdu' ? 'var(--status-inprogress)' : (law.language === 'sindhi' ? 'var(--status-resolved)' : 'var(--accent-cyan)');
+
+    DOM.resourceModalContentDetails.innerHTML = `
+      <div style="background: rgba(0,0,0,0.15); padding: 20px; border-radius: 12px; border: 1px solid var(--border-glass); margin-bottom: 20px;">
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <span class="badge" style="background: rgba(102,252,241,0.15); color: var(--accent-cyan); text-transform: uppercase;">${law.category}</span>
+          <span class="badge" style="background: rgba(255,255,255,0.05); color: ${langBadgeColor}; text-transform: capitalize;">${law.language}</span>
+        </div>
+        <h3 style="color: var(--text-white); font-family: 'Outfit'; font-size: 1.4rem; margin: 0 0 12px 0;">${law.title}</h3>
+        <p style="font-size: 0.95rem; line-height: 1.5; color: var(--text-gray); margin: 0;">${law.legalDescription}</p>
+      </div>
+      
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <div class="modal-section" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-glass); border-radius: 12px; padding: 15px;">
+          <h4 style="color: var(--accent-cyan); margin: 0 0 12px 0;"><i class="fa-solid fa-shield-halved" style="margin-right: 6px;"></i> Survival Instructions</h4>
+          <ul style="list-style: none; padding-left: 0; margin: 0; font-size: 0.9rem; color: var(--text-gray);">
+            ${instList || '<li style="color:var(--text-muted)">No instructions defined.</li>'}
+          </ul>
+        </div>
+        <div class="modal-section" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-glass); border-radius: 12px; padding: 15px;">
+          <h4 style="color: var(--status-pending); margin: 0 0 12px 0;"><i class="fa-solid fa-triangle-exclamation" style="margin-right: 6px;"></i> Safety Precautions</h4>
+          <ul style="list-style: none; padding-left: 0; margin: 0; font-size: 0.9rem; color: var(--text-gray);">
+            ${precList || '<li style="color:var(--text-muted)">No precautions defined.</li>'}
+          </ul>
+        </div>
+      </div>
+    `;
+    
+    DOM.resourceModal.style.display = 'flex';
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+};
+
+function closeResourceModal() {
+  DOM.resourceModal.style.display = 'none';
+}
 
 function renderContactsList(contacts) {
   if (contacts.length === 0) {
@@ -1887,6 +1919,7 @@ function bindEvents() {
     e.preventDefault();
     
     const category = DOM.lawCategory.value;
+    const language = document.getElementById('law-language').value;
     const title = DOM.lawTitle.value.trim();
     const legalDescription = DOM.lawDescription.value.trim();
     const survivalInstructions = DOM.lawInstructions.value.split('\n').map(i => i.trim()).filter(Boolean);
@@ -1896,7 +1929,7 @@ function bindEvents() {
       const response = await fetchAuth(`${API_BASE}/laws`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category, title, legalDescription, survivalInstructions, precautions })
+        body: JSON.stringify({ category, language, title, legalDescription, survivalInstructions, precautions })
       });
       
       if (!response.ok) {
@@ -1909,6 +1942,17 @@ function bindEvents() {
       fetchResources();
     } catch (error) {
       showToast(error.message, 'error');
+    }
+  });
+
+  // Resource details modal close buttons
+  DOM.resourceModalCloseBtn.addEventListener('click', closeResourceModal);
+  DOM.resourceModalCancelBtn.addEventListener('click', closeResourceModal);
+
+  // Close resource modal when clicking outside
+  DOM.resourceModal.addEventListener('click', (e) => {
+    if (e.target === DOM.resourceModal) {
+      closeResourceModal();
     }
   });
 

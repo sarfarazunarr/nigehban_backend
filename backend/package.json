@@ -21,6 +21,7 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.13",
     "openai": "^6.42.0",
+    "pusher": "^5.3.4",
     "socket.io": "^4.7.5",
     "zod": "^3.23.8"
   },

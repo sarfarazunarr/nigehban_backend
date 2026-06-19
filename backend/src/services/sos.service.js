@@ -1,6 +1,7 @@
 const SosSession = require('../models/SosSession');
 const User = require('../models/User');
 const { redisClient } = require('../config/redis');
+const pusher = require('../config/pusher');
 
 /**
  * Initiates an SOS Session in both Redis and MongoDB.
@@ -52,10 +53,8 @@ const startSosSession = async (userId, initialCoordinates) => {
     };
     
     await redisClient.hset(`sos:active:${userId}`, redisData);
-    // Expire active key after 24 hours to prevent memory leaks if session is never closed
     await redisClient.expire(`sos:active:${userId}`, 86400);
 
-    // If initial coordinates are sent, also cache the path in Redis list
     if (initialCoordinates) {
       const pingData = JSON.stringify({
         coordinates: initialCoordinates,
@@ -73,6 +72,31 @@ const startSosSession = async (userId, initialCoordinates) => {
         coordinates: initialCoordinates
       }
     });
+  }
+
+  // Trigger Pusher alerts for SOS start
+  try {
+    const coords = initialCoordinates || [0, 0];
+    
+    // Alert guardians (trusted contacts)
+    user.trustedContacts.forEach((contact) => {
+      pusher.trigger(`user-notifications-${contact._id}`, 'sos_alert', {
+        reporterId: userId.toString(),
+        reporterPhone: user.phone,
+        coordinates: coords,
+        sessionId: session._id.toString()
+      }).catch(err => console.error('Pusher SOS alert error:', err.message));
+    });
+
+    // Alert dispatch operators
+    pusher.trigger('role-B2G', 'sos_dispatch_alert', {
+      reporterId: userId.toString(),
+      reporterPhone: user.phone,
+      coordinates: coords,
+      sessionId: session._id.toString()
+    }).catch(err => console.error('Pusher dispatch SOS alert error:', err.message));
+  } catch (err) {
+    console.error('Failed to trigger Pusher alerts for SOS start:', err.message);
   }
 
   return session;
@@ -130,6 +154,17 @@ const pingSosLocation = async (userId, coordinates) => {
     }
   });
 
+  // Trigger Pusher alert for location ping
+  try {
+    pusher.trigger(`sos-room-${userId}`, 'location_update', {
+      userId: userId.toString(),
+      coordinates,
+      timestamp: now
+    }).catch(err => console.error('Pusher location ping error:', err.message));
+  } catch (err) {
+    console.error('Failed to trigger Pusher alert for location ping:', err.message);
+  }
+
   return session;
 };
 
@@ -160,6 +195,16 @@ const closeSosSession = async (userId) => {
     await redisClient.del(`sos:path:${userId}`);
   }
 
+  // Trigger Pusher alert for SOS closure
+  try {
+    pusher.trigger(`sos-room-${userId}`, 'sos_resolved', {
+      userId: userId.toString(),
+      resolvedAt: new Date()
+    }).catch(err => console.error('Pusher SOS resolve error:', err.message));
+  } catch (err) {
+    console.error('Failed to trigger Pusher alert for SOS close:', err.message);
+  }
+
   return session;
 };
 
@@ -168,7 +213,7 @@ const closeSosSession = async (userId) => {
  */
 const getActiveSosSessions = async () => {
   return await SosSession.find({ active: true })
-    .populate('user', 'phone cnic role')
+    .populate('user', 'phone cnic role name address')
     .populate('listeningGuardians', 'phone cnic');
 };
 

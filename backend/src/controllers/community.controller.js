@@ -1,6 +1,7 @@
 const { z } = require('zod');
 const CommunityAlert = require('../models/CommunityAlert');
 const CommunityHelpChat = require('../models/CommunityHelpChat');
+const pusher = require('../config/pusher');
 
 const createAlertSchema = z.object({
   longitude: z.coerce.number().min(-180).max(180),
@@ -36,17 +37,17 @@ const createAlert = async (req, res, next) => {
       message
     });
 
-    // Broadcast new alert to all connected sockets
-    // Clients can check distance locally and alert if nearby
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('new_community_alert', {
+    // Broadcast new alert to all connected sockets via Pusher
+    try {
+      pusher.trigger('community-alerts', 'new_community_alert', {
         alertId: alert._id,
         seekerId: req.user._id,
         seekerPhone: req.user.phone,
         location: [longitude, latitude],
         message
-      });
+      }).catch(err => console.error('Pusher community alert error:', err.message));
+    } catch (err) {
+      console.error('Failed to trigger Pusher community alert:', err.message);
     }
 
     res.status(201).json({
@@ -79,13 +80,14 @@ const closeAlert = async (req, res, next) => {
     alert.active = false;
     await alert.save();
 
-    // Broadcast resolved status
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('community_alert_resolved', {
+    // Broadcast resolved status via Pusher
+    try {
+      pusher.trigger('community-alerts', 'community_alert_resolved', {
         alertId: alert._id,
         seekerId: req.user._id
-      });
+      }).catch(err => console.error('Pusher community alert resolved error:', err.message));
+    } catch (err) {
+      console.error('Failed to trigger Pusher community alert resolve:', err.message);
     }
 
     res.status(200).json({
@@ -259,16 +261,17 @@ const sendChatMessage = async (req, res, next) => {
     });
     await chat.save();
 
-    // Broadcast message over sockets to room
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`community:chat:${chatId}`).emit('community_message_receive', {
+    // Broadcast message over Pusher to chat channel
+    try {
+      pusher.trigger(`community-chat-${chatId}`, 'community_message_receive', {
         chatId,
         senderId: req.user._id,
         senderPhone: req.user.phone,
         content,
         timestamp: new Date()
-      });
+      }).catch(err => console.error('Pusher community message error:', err.message));
+    } catch (err) {
+      console.error('Failed to trigger Pusher community message:', err.message);
     }
 
     res.status(201).json({

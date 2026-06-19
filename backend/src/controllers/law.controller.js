@@ -7,7 +7,8 @@ const upsertLawSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters'),
   legalDescription: z.string().min(10, 'Legal description must be detailed'),
   survivalInstructions: z.array(z.string()).min(1, 'At least one survival instruction is required'),
-  precautions: z.array(z.string()).optional()
+  precautions: z.array(z.string()).optional(),
+  language: z.enum(['english', 'urdu', 'sindhi']).default('english')
 });
 
 /**
@@ -26,12 +27,12 @@ const getAll = async (req, res, next) => {
 };
 
 /**
- * Get law resource by category
+ * Get law resource by category and language
  */
 const getByCategory = async (req, res, next) => {
   try {
-    const { category } = req.params;
-    const law = await lawService.getLawByCategory(category);
+    const { category, language } = req.params;
+    const law = await lawService.getLawByCategory(category, language || 'english');
     res.status(200).json({
       success: true,
       data: law
@@ -45,12 +46,12 @@ const getByCategory = async (req, res, next) => {
 };
 
 /**
- * Get survival instructions by category (Separate Endpoint)
+ * Get survival instructions by category and language (Separate Endpoint)
  */
 const getInstructions = async (req, res, next) => {
   try {
-    const { category } = req.params;
-    const instructions = await lawService.getSurvivalInstructions(category);
+    const { category, language } = req.params;
+    const instructions = await lawService.getSurvivalInstructions(category, language || 'english');
     res.status(200).json({
       success: true,
       data: instructions
@@ -64,12 +65,12 @@ const getInstructions = async (req, res, next) => {
 };
 
 /**
- * Get safety precautions by category (Separate Endpoint)
+ * Get safety precautions by category and language (Separate Endpoint)
  */
 const getPrecautions = async (req, res, next) => {
   try {
-    const { category } = req.params;
-    const precautions = await lawService.getPrecautions(category);
+    const { category, language } = req.params;
+    const precautions = await lawService.getPrecautions(category, language || 'english');
     res.status(200).json({
       success: true,
       data: precautions
@@ -104,11 +105,11 @@ const upsert = async (req, res, next) => {
  */
 const remove = async (req, res, next) => {
   try {
-    const { category } = req.params;
-    await lawService.deleteLawResource(category);
+    const { category, language } = req.params;
+    await lawService.deleteLawResource(category, language || 'english');
     res.status(200).json({
       success: true,
-      message: `Law resource for category '${category}' deleted successfully.`
+      message: `Law resource for category '${category}' in language '${language || 'english'}' deleted successfully.`
     });
   } catch (error) {
     res.status(404).json({

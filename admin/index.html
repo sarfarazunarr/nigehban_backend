@@ -82,6 +82,12 @@
               <span>Safety Resources</span>
             </a>
           </li>
+          <li class="nav-item">
+            <a class="nav-link" data-tab="contacts">
+              <i class="fa-solid fa-phone-volume"></i>
+              <span>Emergency Contacts</span>
+            </a>
+          </li>
         </ul>
         <div class="sidebar-footer">
           <div class="operator-profile">
@@ -362,7 +368,7 @@
             <h2>Safety Resources Management</h2>
           </div>
           
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
+          <div style="display: block; max-width: 800px; margin: 0 auto;">
             <!-- Left Panel: Laws & Survival Instructions -->
             <div class="glass-panel" style="padding: 20px;">
               <h3 style="color: var(--accent-cyan); margin-bottom: 20px;"><i class="fa-solid fa-scale-balanced" style="margin-right:8px;"></i> Laws & Survival Instructions</h3>
@@ -380,6 +386,14 @@
                     <option value="physical_assault">Physical Assault</option>
                     <option value="kidnapping">Kidnapping</option>
                     <option value="other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="law-language">Language</label>
+                  <select id="law-language" class="form-control" style="background: var(--bg-primary);" required>
+                    <option value="english">English</option>
+                    <option value="urdu">Urdu</option>
+                    <option value="sindhi">Sindhi</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -406,12 +420,21 @@
 
               <!-- Existing Laws List -->
               <h4>Active Law Resources</h4>
-              <div id="laws-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+              <div id="laws-list-container" style="max-height: 500px; overflow-y: auto; margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
                 <div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading law catalog...</div>
               </div>
             </div>
-            
-            <!-- Right Panel: Emergency Contacts / Helplines -->
+          </div>
+        </div>
+
+        <!-- Emergency Contacts Tab -->
+        <div id="tab-contacts" class="tab-content">
+          <div class="page-header">
+            <h2>Emergency Contacts Management</h2>
+          </div>
+          
+          <div style="display: block; max-width: 800px; margin: 0 auto;">
+            <!-- Panel: Emergency Contacts / Helplines -->
             <div class="glass-panel" style="padding: 20px;">
               <h3 style="color: var(--accent-cyan); margin-bottom: 20px;"><i class="fa-solid fa-phone-volume" style="margin-right:8px;"></i> Emergency Helpline Contacts</h3>
               
@@ -439,7 +462,7 @@
 
               <!-- Existing Helplines List -->
               <h4>Active Helplines</h4>
-              <div id="contacts-list-container" style="max-height: 400px; overflow-y: auto; margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
+              <div id="contacts-list-container" style="max-height: 500px; overflow-y: auto; margin-top: 15px; display: flex; flex-direction: column; gap: 12px;">
                 <div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading helpline registers...</div>
               </div>
             </div>
@@ -517,10 +540,31 @@
       </div>
     </div>
 
+    <!-- 5. Safety Resource Details Modal Overlay -->
+    <div id="resource-modal" class="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Safety Resource Details</h3>
+          <button id="resource-modal-close-btn" class="modal-close">&times;</button>
+        </div>
+        
+        <div id="resource-modal-content-details">
+          <!-- Dynamically generated resource details -->
+          <div class="modal-section">
+            <h4>Loading Details...</h4>
+          </div>
+        </div>
+        
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 15px; border-top: 1px solid var(--border-glass); padding-top: 15px;">
+          <button type="button" id="resource-modal-cancel-btn" class="btn" style="background: rgba(255,255,255,0.05); color: var(--text-gray); border: 1px solid var(--border-glass);">Close Details</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Leaflet JS for Maps -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <!-- Socket.io Client for real-time WebSocket -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- Pusher Client for real-time notifications -->
+    <script src="https://js.pusher.com/8.0.1/pusher.min.js"></script>
     <!-- Application script entry point -->
     <script type="module" src="/src/main.js"></script>
   </body>

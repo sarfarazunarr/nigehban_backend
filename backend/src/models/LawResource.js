@@ -5,10 +5,16 @@ const LawResourceSchema = new mongoose.Schema(
     category: {
       type: String,
       required: [true, 'Category is required'],
-      unique: true,
       trim: true,
       lowercase: true,
       index: true
+    },
+    language: {
+      type: String,
+      enum: ['english', 'urdu', 'sindhi'],
+      default: 'english',
+      lowercase: true,
+      trim: true
     },
     title: {
       type: String,
@@ -33,5 +39,8 @@ const LawResourceSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+// Compound unique index for category and language
+LawResourceSchema.index({ category: 1, language: 1 }, { unique: true });
 
 module.exports = mongoose.model('LawResource', LawResourceSchema);

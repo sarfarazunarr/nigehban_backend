@@ -63,7 +63,7 @@ const createIncident = async (userId, category, coordinates, description, files 
 const getIncidents = async (filters = {}, limit = 50, page = 1) => {
   const skip = (page - 1) * limit;
   const incidents = await Incident.find(filters)
-    .populate('reporter', 'phone cnic role')
+    .populate('reporter', 'phone cnic role name address')
     .sort({ timestamp: -1 })
     .skip(skip)
     .limit(limit);
@@ -77,7 +77,7 @@ const getIncidents = async (filters = {}, limit = 50, page = 1) => {
  * Fetch a single incident by ID
  */
 const getIncidentById = async (incidentId) => {
-  return await Incident.findById(incidentId).populate('reporter', 'phone cnic role');
+  return await Incident.findById(incidentId).populate('reporter', 'phone cnic role name address');
 };
 
 /**

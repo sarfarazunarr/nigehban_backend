@@ -279,16 +279,18 @@ const requestLocationFromUser = async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'Unauthorized to request location for this user.' });
     }
 
-    // Emit socket notification `location_request_received` to user if online
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`user:notifications:${userId}`).emit('location_request_received', {
+    // Emit Pusher notification `location_request_received` to user
+    try {
+      const pusher = require('../config/pusher');
+      pusher.trigger(`user-notifications-${userId}`, 'location_request_received', {
         requestedBy: {
           _id: req.user._id,
           phone: req.user.phone,
           name: req.user.name || 'Guardian'
         }
-      });
+      }).catch(err => console.error('Pusher location request error:', err.message));
+    } catch (err) {
+      console.error('Failed to trigger Pusher alert for location request:', err.message);
     }
 
     res.status(200).json({
@@ -327,29 +329,8 @@ const triggerAlertForUser = async (req, res, next) => {
       ? targetUser.lastLocation.coordinates
       : [0, 0];
 
-    // Trigger SOS session
+    // Trigger SOS session (Pusher triggers are handled internally in startSosSession)
     const session = await sosService.startSosSession(userId, initialCoords);
-
-    // Broadcast over sockets
-    const io = req.app.get('io');
-    if (io) {
-      targetUser.trustedContacts.forEach((contactId) => {
-        io.to(`user:notifications:${contactId}`).emit('sos_alert', {
-          reporterId: userId,
-          reporterPhone: targetUser.phone,
-          coordinates: initialCoords,
-          sessionId: session._id
-        });
-      });
-
-      // Broadcast alert to B2G dispatch operators
-      io.to('role:B2G').emit('sos_dispatch_alert', {
-        reporterId: userId,
-        reporterPhone: targetUser.phone,
-        coordinates: initialCoords,
-        sessionId: session._id
-      });
-    }
 
     res.status(200).json({
       success: true,
