@@ -6,8 +6,7 @@ const LawResourceSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Category is required'],
       trim: true,
-      lowercase: true,
-      index: true
+      lowercase: true
     },
     language: {
       type: String,

@@ -103,6 +103,15 @@ User.create = async (data) => {
   return instance;
 };
 
+User.findByIdAndUpdate = async (id, update) => {
+  const user = dbStore.users.find(u => u._id.toString() === id.toString());
+  if (user) {
+    Object.assign(user, update);
+    return createMockUserInstance(user);
+  }
+  return null;
+};
+
 User.findById = (id) => {
   const user = dbStore.users.find(u => u._id.toString() === id.toString());
   const queryChain = {
