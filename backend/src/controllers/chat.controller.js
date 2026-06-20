@@ -1,6 +1,7 @@
 const ChatSession = require('../models/ChatSession');
 const openaiService = require('../services/openai.service');
 const pusher = require('../config/pusher');
+const { uploadMediaStream } = require('../services/cloudinary.service');
 
 /**
  * Retrieve user chat session history
@@ -36,8 +37,22 @@ const getChatHistory = async (req, res, next) => {
 const sendMessage = async (req, res, next) => {
   try {
     const { text } = req.body;
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({ success: false, error: 'Message text is required.' });
+    let messageContent = text;
+
+    if (req.file) {
+      console.log('Uploading chat media to Cloudinary...');
+      const uploadResult = await uploadMediaStream(req.file.buffer, 'nigehbaan_chat_media');
+      const fileUrl = uploadResult.secure_url;
+      const isAudio = req.file.mimetype.startsWith('audio/') || req.file.originalname.match(/\.(mp3|wav|ogg|m4a|aac|mp4)$/i);
+      if (isAudio) {
+        messageContent = `<audio src="${fileUrl}" controls style="width: 100%; max-width: 250px; height: 35px; margin-top: 4px; display: block;"></audio>`;
+      } else {
+        messageContent = `<a href="${fileUrl}" target="_blank" style="color: var(--accent-cyan); text-decoration: underline;">Attachment: ${req.file.originalname}</a>`;
+      }
+    }
+
+    if (!messageContent || typeof messageContent !== 'string') {
+      return res.status(400).json({ success: false, error: 'Message text or media file is required.' });
     }
 
     const userId = req.user._id;
@@ -50,9 +65,10 @@ const sendMessage = async (req, res, next) => {
 
     if (session.status === 'ai') {
       // Run AI response pipeline
+      const aiInputText = req.file ? "[User sent a voice clip]" : messageContent;
       const { reply, handoffTriggered } = await openaiService.processUserMessage(
         userId,
-        text
+        aiInputText
       );
 
       // Emit response back to user via Pusher
@@ -78,13 +94,13 @@ const sendMessage = async (req, res, next) => {
       }
     } else {
       // Human operator mode: Save and relay user message to operators
-      session.messages.push({ sender: 'user', content: text });
+      session.messages.push({ sender: 'user', content: messageContent });
       await session.save();
 
       pusher.trigger('operators', 'operator_receive_message', {
         userId: userId,
         phone: req.user.phone,
-        content: text,
+        content: messageContent,
         timestamp: new Date()
       }).catch(err => console.error('Pusher operator message receive error:', err.message));
     }

@@ -23,9 +23,12 @@ const createIncident = async (userId, category, coordinates, description, files 
 
   // 1. Verify location coordinates using Maps Service
   const verifiedAddress = await verifyCoordinates(lng, lat);
-  const updatedDescription = description
-    ? `${description}\n\n[Verified Location Address: ${verifiedAddress}]`
-    : `Reported at verified location: ${verifiedAddress}`;
+  let updatedDescription = description || '';
+  if (verifiedAddress && !verifiedAddress.startsWith('Mock Area')) {
+    updatedDescription = description
+      ? `${description}\n\n[Verified Location Address: ${verifiedAddress}]`
+      : `Reported at verified location: ${verifiedAddress}`;
+  }
 
   // 2. Upload media files to Cloudinary
   const mediaUrls = [];
